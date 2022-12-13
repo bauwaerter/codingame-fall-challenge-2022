@@ -47,6 +47,18 @@ class Island {
   get isActionable() {
     return this._isActionable;
   }
+
+  getMyRobotCells() {
+    return this.cells.filter(
+      (cell) => cell.owner === Owner.ME && cell.units > 0
+    );
+  }
+
+  getOppRobotCells() {
+    return this.cells.filter(
+      (cell) => cell.owner === Owner.FOE && cell.units > 0
+    );
+  }
 }
 
 class GameState {
@@ -165,10 +177,10 @@ class GameState {
   //   const enemyRecyclers = this.getOppRecyclers();
   // }
 
-  getDistances(fromMap: Map<string, Cell>, toMap: Map<string, Cell>) {
+  getDistances(fromCellArr: Cell[], toCellArr: Cell[]) {
     let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
-    for (let [key, fromCell] of fromMap) {
-      for (let [oppKey, toCell] of toMap) {
+    for (let fromCell of fromCellArr) {
+      for (let toCell of toCellArr) {
         const distance = this.calculateDistance(
           fromCell.coordinates,
           toCell.coordinates
@@ -209,19 +221,16 @@ class GameState {
   //   return false;
   // }
 
-  // checkAdjacentCellsForEnemyCells(cell: Cell) {
-  //   const adjacentCells = this.getAdjacentCells(cell);
-  //   const enemyCellLength = adjacentCells.filter(
-  //     (cell) => cell.owner === Owner.FOE
-  //   );
-  //   const friendlyCellLength = adjacentCells.filter(
-  //     (cell) => cell.owner === Owner.ME
-  //   );
-  //   if (enemyCellLength.length >= friendlyCellLength.length) {
-  //     return true;
-  //   }
-  //   return false;
-  // }
+  checkAdjacentCellsForEnemyCells(cell: Cell) {
+    const adjacentCells = this.getAdjacentCells(cell);
+    const enemyCellLength = adjacentCells.filter(
+      (cell) => cell.owner === Owner.FOE
+    );
+    if (enemyCellLength.length > 0) {
+      return true;
+    }
+    return false;
+  }
 
   buildRecycler(myMatter: number): string[] {
     const commands: string[] = [];
@@ -230,121 +239,124 @@ class GameState {
     }
 
     for (const island of this.islands) {
-    }
-
-    const myCells = this.getMyCells();
-    const potentialCells = [...myCells.values()]
-      .filter(
-        (cell) =>
-          !cell.recycler &&
-          !cell.inRangeOfRecycler &&
-          cell.canBuild &&
-          this.checkAdjacentCellsForEnemyCells(cell)
+      if (
+        island.cells.every(
+          (cell) => cell.owner === Owner.ME || cell.owner === Owner.NEUTRAL
+        )
       )
-      .sort((a, b) => {
-        return b.scrapAmount - a.scrapAmount;
-      });
-    if (potentialCells.length === 0) {
-      return [];
+        continue;
+      const islandCells = island.cells;
+      const potentialCells = islandCells
+        .filter(
+          (cell) =>
+            !cell.recycler &&
+            !cell.inRangeOfRecycler &&
+            cell.canBuild &&
+            this.checkAdjacentCellsForEnemyCells(cell)
+        )
+        .sort((a, b) => {
+          return b.scrapAmount - a.scrapAmount;
+        });
+      if (potentialCells.length === 0) {
+        continue;
+      }
+      const recyclerCell = potentialCells[0];
+      const buildCommand = this.createBuildCommand(recyclerCell.coordinates);
+      commands.push(buildCommand);
     }
-    const recyclerCell = potentialCells[0];
-    const buildCommand = this.createBuildCommand(recyclerCell.coordinates);
-    commands.push(buildCommand);
     return commands;
   }
 
-  // getAdjacentCells(cell: Cell): Cell[] {
-  //   return [
-  //     this.cells.get(
-  //       this.getMapKey({ x: cell.coordinates.x, y: cell.coordinates.y + 1 })
-  //     ),
-  //     this.cells.get(
-  //       this.getMapKey({ x: cell.coordinates.x, y: cell.coordinates.y - 1 })
-  //     ),
-  //     this.cells.get(
-  //       this.getMapKey({ x: cell.coordinates.x - 1, y: cell.coordinates.y })
-  //     ),
-  //     this.cells.get(
-  //       this.getMapKey({ x: cell.coordinates.x + 1, y: cell.coordinates.y })
-  //     ),
-  //   ].filter((cell) => cell !== undefined) as Cell[];
-  // }
+  getAdjacentCells(cell: Cell): Cell[] {
+    return [
+      this.cells[cell.coordinates.x][cell.coordinates.y + 1],
+      this.cells[cell.coordinates.x][cell.coordinates.y - 1],
+      this.cells[cell.coordinates.x + 1][cell.coordinates.y],
+      this.cells[cell.coordinates.x - 1][cell.coordinates.y],
+    ].filter((cell) => cell !== undefined) as Cell[];
+  }
 
-  // moveRobots(): string[] {
-  //   const commands: string[] = [];
-  //   const myRobotCells = this.getMyRobotCells();
-  //   const oppCells = this.getOppCells();
-  //   let moves: { from: Cell; to: Cell }[] = [];
+  moveRobots(): string[] {
+    const commands: string[] = [];
 
-  //   const myRobotCellsDistanceToOppCells = this.getDistances(
-  //     myRobotCells,
-  //     oppCells
-  //   ).sort((a, b) => a.distance - b.distance);
-  //   const distinctRobotCells = [
-  //     ...new Set(
-  //       myRobotCellsDistanceToOppCells.map(
-  //         (c) => c.from.coordinates.x + c.from.coordinates.y
-  //       )
-  //     ),
-  //   ].map((key) =>
-  //     myRobotCellsDistanceToOppCells.find(
-  //       (c) => c.from.coordinates.x + c.from.coordinates.y === key
-  //     )
-  //   );
-  //   for (const move of distinctRobotCells) {
-  //     if (!move) continue;
-  //     const moveCommand = this.createMoveCommand({
-  //       amount: move.from.units,
-  //       fromX: move.from.coordinates.x,
-  //       fromY: move.from.coordinates.y,
-  //       toX: move.to.coordinates.x,
-  //       toY: move.to.coordinates.y,
-  //     });
-  //     commands.push(moveCommand);
-  //   }
+    for (const island of this.islands) {
+      const myRobotCells = island.getMyRobotCells();
+      const oppCells = island.getOppRobotCells();
+      let moves: { from: Cell; to: Cell }[] = [];
 
-  //   return commands;
-  // }
+      const myRobotCellsDistanceToOppCells = this.getDistances(
+        myRobotCells,
+        oppCells
+      ).sort((a, b) => a.distance - b.distance);
+      const distinctRobotCells = [
+        ...new Set(
+          myRobotCellsDistanceToOppCells.map(
+            (c) => c.from.coordinates.x + c.from.coordinates.y
+          )
+        ),
+      ].map((key) =>
+        myRobotCellsDistanceToOppCells.find(
+          (c) => c.from.coordinates.x + c.from.coordinates.y === key
+        )
+      );
+      for (const move of distinctRobotCells) {
+        if (!move) continue;
+        const moveCommand = this.createMoveCommand({
+          amount: move.from.units,
+          fromX: move.from.coordinates.x,
+          fromY: move.from.coordinates.y,
+          toX: move.to.coordinates.x,
+          toY: move.to.coordinates.y,
+        });
+        commands.push(moveCommand);
+      }
+    }
 
-  // spawnRobots(myMatter: number): string[] {
-  //   const commands: string[] = [];
-  //   if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
-  //     return [];
-  //   }
-  //   const spawnRobotLimit = myMatter % this.RECYCLER_AND_SPAWN_COST;
-  //   const maxSpawn = spawnRobotLimit;
-  //   const myRobotCells = this.getMyRobotCells();
-  //   const enemyRobots = this.getOppRobotCells();
-  //   let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
-  //   for (let [key, cell] of myRobotCells) {
-  //     for (let [oppKey, oppCell] of enemyRobots) {
-  //       const distance = this.calculateDistance(
-  //         cell.coordinates,
-  //         oppCell.coordinates
-  //       );
-  //       distanceArr.push({ from: cell, to: oppCell, distance });
-  //     }
-  //   }
-  //   const closestRobots = distanceArr.sort((a, b) => a.distance - b.distance);
-  //   if (closestRobots.length === 0) {
-  //     return [];
-  //   }
-  //   for (let i = 0; i < maxSpawn; i++) {
-  //     const closestRobot = closestRobots.shift();
-  //     if (!closestRobot) continue;
-  //     const adjacentCells = this.getAdjacentCells(closestRobot.from).filter(
-  //       (cell) => cell.scrapAmount > 0
-  //     );
-  //     if (adjacentCells.length === 0) return [];
-  //     const spawnCommand = this.createSpawnCommand(
-  //       1,
-  //       closestRobot.from.coordinates
-  //     );
-  //     commands.push(spawnCommand);
-  //   }
+    return commands;
+  }
 
-  //   return commands;
-  // }
+  spawnRobots(myMatter: number): string[] {
+    const commands: string[] = [];
+    if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
+      return [];
+    }
+    const spawnRobotLimit = myMatter % this.RECYCLER_AND_SPAWN_COST;
+    const maxSpawn = spawnRobotLimit;
+
+    for (const island of this.islands) {
+      const myRobotCells = island.getMyRobotCells();
+      const enemyRobots = island.getOppRobotCells();
+      let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
+      for (let robotCell of myRobotCells) {
+        for (let oppCell of enemyRobots) {
+          const distance = this.calculateDistance(
+            robotCell.coordinates,
+            oppCell.coordinates
+          );
+          distanceArr.push({ from: robotCell, to: oppCell, distance });
+        }
+      }
+      const closestRobots = distanceArr.sort((a, b) => a.distance - b.distance);
+      if (closestRobots.length === 0) {
+        return [];
+      }
+      for (let i = 0; i < maxSpawn; i++) {
+        const closestRobot = closestRobots.shift();
+        if (!closestRobot) continue;
+        const adjacentCells = this.getAdjacentCells(closestRobot.from).filter(
+          (cell) => cell.scrapAmount > 0
+        );
+        if (adjacentCells.length === 0) return [];
+        const spawnCommand = this.createSpawnCommand(
+          1,
+          closestRobot.from.coordinates
+        );
+        commands.push(spawnCommand);
+      }
+    }
+
+    return commands;
+  }
 
   findIslands() {
     let islands: Island[] = [];
@@ -392,22 +404,21 @@ class GameState {
     );
     let myMatter = this.myMatter;
     const buildRecyclerCommand = this.buildRecycler(myMatter);
-    // myMatter =
-    //   myMatter - buildRecyclerCommand.length * this.RECYCLER_AND_SPAWN_COST;
-    // const spawnRobotsCommand = this.spawnRobots(myMatter);
-    // const moveRobotsCommand = this.moveRobots();
+    myMatter =
+      myMatter - buildRecyclerCommand.length * this.RECYCLER_AND_SPAWN_COST;
+    const spawnRobotsCommand = this.spawnRobots(myMatter);
+    const moveRobotsCommand = this.moveRobots();
 
-    // const command = [
-    //   buildRecyclerCommand,
-    //   moveRobotsCommand,
-    //   spawnRobotsCommand,
-    // ]
-    //   .flatMap((c) => c)
-    //   .join("");
+    const command = [
+      buildRecyclerCommand,
+      moveRobotsCommand,
+      spawnRobotsCommand,
+    ]
+      .flatMap((c) => c)
+      .join("");
 
     this.clearCells();
-    return "";
-    // return command;
+    return command;
   }
 }
 
