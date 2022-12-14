@@ -174,10 +174,9 @@ class GameState {
   }
 
   calculateDistance(aCoord: Coordinates, bCoord: Coordinates) {
-    const x = Math.pow(bCoord.x - aCoord.x, 2);
-    const y = Math.pow(bCoord.y - aCoord.y, 2);
-    const distance = Math.sqrt(x + y);
-    return distance;
+    const x = Math.abs(bCoord.x - aCoord.x);
+    const y = Math.abs(bCoord.y - aCoord.y);
+    return x + y;
   }
 
   getDistances(fromCellArr: Cell[], toCellArr: Cell[]) {
@@ -266,12 +265,30 @@ class GameState {
   }
 
   getAdjacentCells(cell: Cell): Cell[] {
-    return [
-      this.cells[cell.coordinates.x][cell.coordinates.y + 1],
-      this.cells[cell.coordinates.x][cell.coordinates.y - 1],
-      this.cells[cell.coordinates.x + 1][cell.coordinates.y],
-      this.cells[cell.coordinates.x - 1][cell.coordinates.y],
-    ].filter((cell) => cell !== undefined) as Cell[];
+    let adjacentCells: Cell[] = [];
+    if (cell.coordinates.x > 0) {
+      adjacentCells.push(
+        this.cells[cell.coordinates.x - 1][cell.coordinates.y]
+      );
+    }
+    if (cell.coordinates.x < this.width - 1) {
+      adjacentCells.push(
+        this.cells[cell.coordinates.x + 1][cell.coordinates.y]
+      );
+    }
+    if (cell.coordinates.y > 0) {
+      adjacentCells.push(
+        this.cells[cell.coordinates.x][cell.coordinates.y - 1]
+      );
+    }
+    if (cell.coordinates.y < this.height - 1) {
+      adjacentCells.push(
+        this.cells[cell.coordinates.x][cell.coordinates.y + 1]
+      );
+    }
+    return adjacentCells.filter(
+      (cell) => cell.scrapAmount > 0 && !cell.recycler
+    );
   }
 
   moveRobots(): string[] {
@@ -284,93 +301,89 @@ class GameState {
       const myRobotCells = island.getMyRobotCells();
       const nuetralCells = island.getNuetralCells();
       if (island.isIslandOwnedByMeWithNeutralCells) {
-        const myRobotCellsDistanceToNuetralCells = this.getDistances(
-          myRobotCells,
-          nuetralCells
-        ).sort((a, b) => a.distance - b.distance);
-        const distinctRobotCells = [
-          ...new Set(
-            myRobotCellsDistanceToNuetralCells.map(
-              (c) => c.from.coordinates.x + c.from.coordinates.y
-            )
-          ),
-        ].map((key) =>
-          myRobotCellsDistanceToNuetralCells.find(
-            (c) => c.from.coordinates.x + c.from.coordinates.y === key
-          )
-        );
-        for (const move of distinctRobotCells) {
-          if (!move) continue;
+        const tempNuetralCells = [...nuetralCells];
+        for (const robot of myRobotCells) {
+          if (tempNuetralCells.length === 0) break;
+          const moveToNuetralCell = tempNuetralCells.shift();
+          if (!moveToNuetralCell) break;
           const moveCommand = this.createMoveCommand({
-            amount: move.from.units,
-            fromX: move.from.coordinates.x,
-            fromY: move.from.coordinates.y,
-            toX: move.to.coordinates.x,
-            toY: move.to.coordinates.y,
+            amount: robot.units,
+            fromX: robot.coordinates.x,
+            fromY: robot.coordinates.y,
+            toX: moveToNuetralCell.coordinates.x,
+            toY: moveToNuetralCell.coordinates.y,
           });
           commands.push(moveCommand);
         }
         continue;
       }
 
-      const myCells = island.getMyCells();
       const oppCells = island.getOppCells();
 
-      if (nuetralCells.length > myCells.length + oppCells.length) {
-        const myRobotCellsDistanceToNuetralCells = this.getDistances(
-          myRobotCells,
+      for (const myRobotCell of myRobotCells) {
+        const adjacentCells = this.getAdjacentCells(myRobotCell);
+        const enemyCells = adjacentCells.filter(
+          (cell) => cell.owner === Owner.FOE
+        );
+        if (enemyCells.length > 0) {
+          const moveCommand = this.createMoveCommand({
+            amount: myRobotCell.units,
+            fromX: myRobotCell.coordinates.x,
+            fromY: myRobotCell.coordinates.y,
+            toX: enemyCells[0].coordinates.x,
+            toY: enemyCells[0].coordinates.y,
+          });
+          console.error("moving to enemy cell");
+          commands.push(moveCommand);
+          continue;
+        }
+        const nuetralCells = adjacentCells.filter(
+          (cell) => cell.owner === Owner.NEUTRAL
+        );
+        if (nuetralCells.length > 0) {
+          const moveCommand = this.createMoveCommand({
+            amount: myRobotCell.units,
+            fromX: myRobotCell.coordinates.x,
+            fromY: myRobotCell.coordinates.y,
+            toX: nuetralCells[0].coordinates.x,
+            toY: nuetralCells[0].coordinates.y,
+          });
+          console.error("moving to nuetral cell");
+          commands.push(moveCommand);
+          continue;
+        }
+        const moveToClosestOppCell = this.getDistances(
+          [myRobotCell],
+          oppCells
+        ).sort((a, b) => a.distance - b.distance);
+        if (moveToClosestOppCell.length > 0) {
+          const moveCommand = this.createMoveCommand({
+            amount: myRobotCell.units,
+            fromX: myRobotCell.coordinates.x,
+            fromY: myRobotCell.coordinates.y,
+            toX: moveToClosestOppCell[0].to.coordinates.x,
+            toY: moveToClosestOppCell[0].to.coordinates.y,
+          });
+          console.error("moving to closest opp cell");
+          commands.push(moveCommand);
+          continue;
+        }
+        const moveToClosestNuetralCell = this.getDistances(
+          [myRobotCell],
           nuetralCells
         ).sort((a, b) => a.distance - b.distance);
-        const distinctRobotCells = [
-          ...new Set(
-            myRobotCellsDistanceToNuetralCells.map(
-              (c) => c.from.coordinates.x + c.from.coordinates.y
-            )
-          ),
-        ].map((key) =>
-          myRobotCellsDistanceToNuetralCells.find(
-            (c) => c.from.coordinates.x + c.from.coordinates.y === key
-          )
-        );
-        for (const move of distinctRobotCells) {
-          if (!move) continue;
+        if (moveToClosestNuetralCell.length > 0) {
           const moveCommand = this.createMoveCommand({
-            amount: move.from.units,
-            fromX: move.from.coordinates.x,
-            fromY: move.from.coordinates.y,
-            toX: move.to.coordinates.x,
-            toY: move.to.coordinates.y,
+            amount: myRobotCell.units,
+            fromX: myRobotCell.coordinates.x,
+            fromY: myRobotCell.coordinates.y,
+            toX: moveToClosestNuetralCell[0].to.coordinates.x,
+            toY: moveToClosestNuetralCell[0].to.coordinates.y,
           });
+          console.error("moving to closest nuetral cell");
           commands.push(moveCommand);
+          continue;
         }
-        continue;
-      }
-
-      const myRobotCellsDistanceToOppCells = this.getDistances(
-        myRobotCells,
-        oppCells
-      ).sort((a, b) => a.distance - b.distance);
-      const distinctRobotCells = [
-        ...new Set(
-          myRobotCellsDistanceToOppCells.map(
-            (c) => c.from.coordinates.x + c.from.coordinates.y
-          )
-        ),
-      ].map((key) =>
-        myRobotCellsDistanceToOppCells.find(
-          (c) => c.from.coordinates.x + c.from.coordinates.y === key
-        )
-      );
-      for (const move of distinctRobotCells) {
-        if (!move) continue;
-        const moveCommand = this.createMoveCommand({
-          amount: move.from.units,
-          fromX: move.from.coordinates.x,
-          fromY: move.from.coordinates.y,
-          toX: move.to.coordinates.x,
-          toY: move.to.coordinates.y,
-        });
-        commands.push(moveCommand);
       }
     }
 
@@ -378,12 +391,16 @@ class GameState {
   }
 
   spawnRobots(myMatter: number): string[] {
+    console.error({ myMatter });
     const commands: string[] = [];
     if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
       return [];
     }
-    const spawnRobotLimit = myMatter % this.RECYCLER_AND_SPAWN_COST;
+    const spawnRobotLimit = Math.floor(myMatter / this.RECYCLER_AND_SPAWN_COST);
     const maxSpawn = spawnRobotLimit;
+
+    if (maxSpawn <= 0) return [];
+    console.error({ maxSpawn });
 
     for (const island of this.islands) {
       if (island.isIslandAllOwnedByMe) continue;
@@ -396,21 +413,15 @@ class GameState {
           1,
           myRobotCells[0].coordinates
         );
+        console.error("spawning on isIslandOwnedByMeWithNeutralCells cell");
         commands.push(spawnCommand);
         continue;
       }
+      const myCells = island.getMyCells();
       const enemyRobots = island.getOppRobotCells();
-      let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
-      for (let robotCell of myRobotCells) {
-        for (let oppCell of enemyRobots) {
-          const distance = this.calculateDistance(
-            robotCell.coordinates,
-            oppCell.coordinates
-          );
-          distanceArr.push({ from: robotCell, to: oppCell, distance });
-        }
-      }
-      const closestRobots = distanceArr.sort((a, b) => a.distance - b.distance);
+      const closestRobots = this.getDistances(myCells, enemyRobots).sort(
+        (a, b) => a.distance - b.distance
+      );
       if (closestRobots.length === 0) {
         return [];
       }
@@ -425,6 +436,7 @@ class GameState {
           1,
           closestRobot.from.coordinates
         );
+        console.error("spawning on closestRobot cell");
         commands.push(spawnCommand);
       }
     }
@@ -470,10 +482,22 @@ class GameState {
     return islands;
   }
 
+  cleanUpTurn() {
+    this.cells = [];
+    this.islands = [];
+  }
+
   processTurn() {
-    this.islands = this.findIslands().filter(
-      (island) => island.cells.length > 0 && island.isActionable
-    );
+    // const tempIslands = this.findIslands();
+    // console.error({ islandsbeforefilterlength: tempIslands.length });
+    // this.islands = tempIslands.filter(
+    //   (island) => island.cells.length > 0 && island.isActionable
+    // );
+    this.islands = this.findIslands();
+    console.error({
+      islandslength: this.islands.length,
+      isaction: this.islands[0].isActionable,
+    });
     let myMatter = this.myMatter;
 
     const buildRecyclerCommand = this.buildRecycler(myMatter);
@@ -490,7 +514,7 @@ class GameState {
       .flatMap((c) => c)
       .join("");
 
-    this.clearCells();
+    this.cleanUpTurn();
     return command;
   }
 }
