@@ -7,6 +7,32 @@ var inputs: string[] = readline().split(" ");
 const width: number = parseInt(inputs[0]);
 const height: number = parseInt(inputs[1]);
 
+interface Action {
+  type: "MOVE" | "SPAWN" | "BUILD";
+}
+
+interface MoveAction extends Action {
+  type: "MOVE";
+  amount: number;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
+interface SpawnAction extends Action {
+  type: "SPAWN";
+  amount: number;
+  x: number;
+  y: number;
+}
+
+interface BuildAction extends Action {
+  type: "BUILD";
+  x: number;
+  y: number;
+}
+
 const debug = (text: string) => {
   console.log(`MESSAGE ${text};`);
 };
@@ -31,55 +57,87 @@ interface Cell {
   visited: boolean;
 }
 
-class Island {
-  private _cells: Cell[] = [];
-  private _isActionable: boolean = false;
+abstract class Island {
+  protected _cells: Cell[] = [];
 
   constructor(cells: Cell[]) {
     this._cells = cells;
-    this._isActionable = cells.some((cell) => cell.owner === Owner.ME);
   }
 
   get cells() {
     return this._cells;
   }
 
-  get isActionable() {
-    return this._isActionable;
+  abstract getBuildActions(): BuildAction[];
+  abstract getMoveActions(): MoveAction[];
+  abstract getSpawnActions(): SpawnAction[];
+
+  getRobotCells() {
+    return this.cells.filter((cell) => cell.units > 0);
+  }
+}
+
+class IslandWithMeAndEnemy extends Island {
+  protected _myCells: Cell[] = [];
+  protected _oppCells: Cell[] = [];
+  protected _perimeterCells: Cell[] = [];
+
+  constructor(cells: Cell[]) {
+    super(cells);
   }
 
-  get isIslandAllOwnedByMe() {
-    return this.cells.every((cell) => cell.owner === Owner.ME);
+  getBuildActions(): BuildAction[] {
+    return [];
   }
 
-  get isIslandOwnedByMeWithNeutralCells() {
-    return this.cells.every(
-      (cell) => cell.owner === Owner.ME || cell.owner === Owner.NEUTRAL
-    );
+  getMoveActions(): MoveAction[] {
+    return [];
   }
 
-  getMyRobotCells() {
-    return this.cells.filter(
-      (cell) => cell.owner === Owner.ME && cell.units > 0
-    );
+  getSpawnActions(): SpawnAction[] {
+    return [];
+  }
+}
+
+class IslandWithMeAndNeutral extends Island {
+  protected _cells: Cell[] = [];
+
+  constructor(cells: Cell[]) {
+    super(cells);
+    this._cells = cells;
   }
 
-  getOppRobotCells() {
-    return this.cells.filter(
-      (cell) => cell.owner === Owner.FOE && cell.units > 0
-    );
+  getBuildActions(): BuildAction[] {
+    return [];
   }
 
-  getMyCells() {
-    return this.cells.filter((cell) => cell.owner === Owner.ME);
+  getMoveActions(): MoveAction[] {
+    return [];
   }
 
-  getOppCells() {
-    return this.cells.filter((cell) => cell.owner === Owner.FOE);
+  getSpawnActions(): SpawnAction[] {
+    return [];
+  }
+}
+
+class IslandWithMe extends Island {
+  protected _cells: Cell[] = [];
+
+  constructor(cells: Cell[]) {
+    super(cells);
+    this._cells = cells;
   }
 
-  getNuetralCells() {
-    return this.cells.filter((cell) => cell.owner === Owner.NEUTRAL);
+  getBuildActions(): BuildAction[] {
+    return [];
+  }
+
+  getMoveActions(): MoveAction[] {
+    return [];
+  }
+
+  getSpawnActions(): SpawnAction[] {
+    return [];
   }
 }
 
@@ -194,11 +252,6 @@ class GameState {
       }
     }
     return distanceArr;
-  }
-
-  hasUnits(cell: Cell | undefined) {
-    if (!cell) return false;
-    return cell.units > 0;
   }
 
   // checkAdjacentCellsForUnits(cell: Cell) {
@@ -473,12 +526,12 @@ class GameState {
       for (let j = 0; j < this.cells[i].length; j += 1) {
         if (isValidCell(this.cells[i][j])) {
           dfs(i, j);
-          islands = [...this.islands, new Island(islandCells)];
+          if (islandCells.length === 0) continue;
+          islands = [...islands, new Island(islandCells)];
           islandCells = [];
         }
       }
     }
-
     return islands;
   }
 
@@ -488,17 +541,11 @@ class GameState {
   }
 
   processTurn() {
-    // const tempIslands = this.findIslands();
-    // console.error({ islandsbeforefilterlength: tempIslands.length });
-    // this.islands = tempIslands.filter(
-    //   (island) => island.cells.length > 0 && island.isActionable
-    // );
     this.islands = this.findIslands();
-    console.error({
-      islandslength: this.islands.length,
-      isaction: this.islands[0].isActionable,
-    });
     let myMatter = this.myMatter;
+
+    for (const island of this.islands) {
+    }
 
     const buildRecyclerCommand = this.buildRecycler(myMatter);
     myMatter =
@@ -543,10 +590,10 @@ while (true) {
         scrapAmount,
         owner,
         units,
-        recycler: !!recycler,
-        canBuild: !!canBuild,
-        canSpawn: !!canSpawn,
-        inRangeOfRecycler: !!inRangeOfRecycler,
+        recycler: recycler === 1,
+        canBuild: canBuild === 1,
+        canSpawn: canSpawn === 1,
+        inRangeOfRecycler: inRangeOfRecycler === 1,
         visited: false,
       };
       gameState.addCell(cell);
