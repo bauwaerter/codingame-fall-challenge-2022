@@ -7,30 +7,109 @@ var inputs: string[] = readline().split(" ");
 const width: number = parseInt(inputs[0]);
 const height: number = parseInt(inputs[1]);
 
-interface Action {
-  type: "MOVE" | "SPAWN" | "BUILD";
+function calculateDistance(aCoord: Coordinates, bCoord: Coordinates) {
+  const x = Math.abs(bCoord.x - aCoord.x);
+  const y = Math.abs(bCoord.y - aCoord.y);
+  return x + y;
 }
 
-interface MoveAction extends Action {
-  type: "MOVE";
-  amount: number;
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
+function getDistances(
+  fromCellArr: Cell[],
+  toCellArr: Cell[]
+): { from: Cell; to: Cell; distance: number }[] {
+  let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
+  for (let fromCell of fromCellArr) {
+    for (let toCell of toCellArr) {
+      const distance = this.calculateDistance(
+        fromCell.coordinates,
+        toCell.coordinates
+      );
+      distanceArr = [...distanceArr, { from: fromCell, to: toCell, distance }];
+    }
+  }
+  return distanceArr;
 }
 
-interface SpawnAction extends Action {
-  type: "SPAWN";
-  amount: number;
-  x: number;
-  y: number;
+function getClosestCells(
+  fromCellArr: Cell[],
+  toCellArr: Cell[]
+): { from: Cell; to: Cell; distance: number }[] {
+  const distanceArr = getDistances(fromCellArr, toCellArr);
+  const sortedDistanceArr = distanceArr.sort((a, b) => a.distance - b.distance);
+  return sortedDistanceArr;
 }
 
-interface BuildAction extends Action {
-  type: "BUILD";
-  x: number;
-  y: number;
+abstract class Action {
+  abstract type: "MOVE" | "SPAWN" | "BUILD";
+  abstract toString(): string;
+}
+
+class MoveAction extends Action {
+  public readonly type = "MOVE";
+  public readonly amount: number;
+  public readonly fromX: number;
+  public readonly fromY: number;
+  public readonly toX: number;
+  public readonly toY: number;
+
+  constructor({
+    amount,
+    fromX,
+    fromY,
+    toX,
+    toY,
+  }: {
+    amount: number;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+  }) {
+    super();
+    this.amount = amount;
+    this.fromX = fromX;
+    this.fromY = fromY;
+    this.toX = toX;
+    this.toY = toY;
+  }
+
+  toString(): string {
+    return `MOVE ${this.amount} ${this.fromX} ${this.fromY} ${this.toX} ${this.toY};`;
+  }
+}
+
+class SpawnAction extends Action {
+  public readonly type = "SPAWN";
+  public readonly amount: number;
+  public readonly x: number;
+  public readonly y: number;
+
+  constructor({ amount, x, y }: { amount: number; x: number; y: number }) {
+    super();
+    this.amount = amount;
+    this.x = x;
+    this.y = y;
+  }
+
+  toString(): string {
+    return `SPAWN ${this.amount} ${this.x} ${this.y};`;
+  }
+}
+
+class BuildAction extends Action {
+  public readonly type = "BUILD";
+  public readonly x: number;
+  public readonly y: number;
+
+  constructor({ x, y }: { x: number; y: number }) {
+    super();
+    this.x = x;
+    this.y = y;
+  }
+
+  toString(): string {
+    return `BUILD ${this.x} ${this.y};`;
+  }
 }
 
 const debug = (text: string) => {
@@ -57,6 +136,66 @@ interface Cell {
   visited: boolean;
 }
 
+class Archipelagos {
+  private _islands: Island[] = [];
+  private _myMatter: number;
+  private _costToBuildOrSpawn: number;
+
+  constructor(islands: Island[], myMatter: number, costToBuildOrSpawn: number) {
+    this._islands = islands.sort((a, b) => {
+      if (a instanceof IslandWithMeAndEnemy) {
+        return 1;
+      }
+      if (b instanceof IslandWithMeAndEnemy) {
+        return -1;
+      }
+      if (a instanceof IslandWithMeAndNeutral) {
+        return 1;
+      }
+      if (b instanceof IslandWithMeAndNeutral) {
+        return -1;
+      }
+      return 0;
+    });
+    this._myMatter = myMatter;
+    this._costToBuildOrSpawn = costToBuildOrSpawn;
+  }
+
+  get costToBuildOrSpawn() {
+    return this._costToBuildOrSpawn;
+  }
+
+  get islands() {
+    return this._islands;
+  }
+
+  get myMatter() {
+    return this._myMatter;
+  }
+
+  protected set myMatter(value: number) {
+    this._myMatter = value;
+  }
+
+  decrementMatter(amount: number) {
+    this.myMatter -= amount;
+  }
+
+  processTurn(): Action[] {
+    const actions: Action[] = [];
+    for (const island of this.islands) {
+      actions.push(
+        ...island.processTurn(
+          this.myMatter,
+          this.costToBuildOrSpawn,
+          this.decrementMatter
+        )
+      );
+    }
+    return actions;
+  }
+}
+
 abstract class Island {
   protected _cells: Cell[] = [];
 
@@ -70,10 +209,95 @@ abstract class Island {
 
   abstract getBuildActions(): BuildAction[];
   abstract getMoveActions(): MoveAction[];
-  abstract getSpawnActions(): SpawnAction[];
+  abstract getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[];
 
-  getRobotCells() {
-    return this.cells.filter((cell) => cell.units > 0);
+  protected generateBuildActions(
+    matter: number,
+    costToBuildOrSpawn: number,
+    decrementMatter: () => void
+  ): BuildAction[] {
+    if (matter < costToBuildOrSpawn) return [];
+    return this.getBuildActions();
+  }
+
+  protected generateMoveActions(): MoveAction[] {
+    return this.getMoveActions();
+  }
+
+  protected generateSpawnActions(
+    matter: number,
+    costToBuildOrSpawn: number,
+    decrementMatter: (amount: number) => void
+  ): SpawnAction[] {
+    if (matter < costToBuildOrSpawn) return [];
+    const maxNumberOfSpawnActions = Math.floor(matter / costToBuildOrSpawn);
+    const spawnActions = this.getSpawnActions(maxNumberOfSpawnActions);
+    decrementMatter(spawnActions.length * costToBuildOrSpawn);
+    return spawnActions;
+  }
+
+  processTurn(
+    matter: number,
+    costToBuildOrSpawn: number,
+    decrementMatter: (amount: number) => void
+  ): Action[] {
+    const buildActions = this.generateBuildActions(
+      matter,
+      costToBuildOrSpawn,
+      decrementMatter
+    );
+    const moveActions = this.generateMoveActions();
+    const spawnActions = this.generateSpawnActions(
+      matter,
+      costToBuildOrSpawn,
+      decrementMatter
+    );
+    return [...buildActions, ...moveActions, ...spawnActions];
+  }
+
+  getMyCells() {
+    return this.cells.filter((cell) => cell.owner === Owner.ME);
+  }
+
+  getEnemyCells() {
+    return this.cells.filter((cell) => cell.owner === Owner.FOE);
+  }
+
+  getNuetralCells() {
+    return this.cells.filter((cell) => cell.owner === Owner.NEUTRAL);
+  }
+
+  getMyRobotCells() {
+    return this.cells.filter(
+      (cell) => cell.units > 0 && cell.owner === Owner.ME
+    );
+  }
+
+  getEnemyRobotCells() {
+    return this.cells.filter(
+      (cell) => cell.units > 0 && cell.owner === Owner.FOE
+    );
+  }
+}
+
+class IslandOnlyMe extends Island {
+  protected _cells: Cell[] = [];
+
+  constructor(cells: Cell[]) {
+    super(cells);
+    this._cells = cells;
+  }
+
+  getBuildActions(): BuildAction[] {
+    return [];
+  }
+
+  getMoveActions(): MoveAction[] {
+    return [];
+  }
+
+  getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
+    return [];
   }
 }
 
@@ -94,7 +318,7 @@ class IslandWithMeAndEnemy extends Island {
     return [];
   }
 
-  getSpawnActions(): SpawnAction[] {
+  getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
     return [];
   }
 }
@@ -115,29 +339,18 @@ class IslandWithMeAndNeutral extends Island {
     return [];
   }
 
-  getSpawnActions(): SpawnAction[] {
-    return [];
-  }
-}
-
-class IslandWithMe extends Island {
-  protected _cells: Cell[] = [];
-
-  constructor(cells: Cell[]) {
-    super(cells);
-    this._cells = cells;
-  }
-
-  getBuildActions(): BuildAction[] {
-    return [];
-  }
-
-  getMoveActions(): MoveAction[] {
-    return [];
-  }
-
-  getSpawnActions(): SpawnAction[] {
-    return [];
+  getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
+    const totalMyRobots = this.getMyRobotCells().length;
+    if (totalMyRobots > 0) return [];
+    const myCells = this.getMyCells();
+    const nuetralCells = this.getNuetralCells();
+    const closestCell = getClosestCells(myCells, nuetralCells)[0].from;
+    const spawnAction = new SpawnAction({
+      amount: 1,
+      x: closestCell.coordinates.x,
+      y: closestCell.coordinates.y,
+    });
+    return [spawnAction];
   }
 }
 
@@ -149,7 +362,7 @@ class GameState {
   private _myMatter: number;
   private _oppMatter: number;
   private _cells: Cell[][] = [[]];
-  private _islands: Island[] = [];
+  private _archipelagos: Archipelagos | null = null;
 
   constructor(height: number, width: number) {
     this._height = height;
@@ -188,12 +401,12 @@ class GameState {
     this._cells = cells;
   }
 
-  get islands() {
-    return this._islands;
+  get archipelagos() {
+    return this._archipelagos;
   }
 
-  set islands(islands: Island[]) {
-    this._islands = islands;
+  set archipelagos(archipelagos: Archipelagos | null) {
+    this._archipelagos = archipelagos;
   }
 
   clearCells() {
@@ -205,53 +418,6 @@ class GameState {
       this.cells[cell.coordinates.x] = [];
     }
     this.cells[cell.coordinates.x][cell.coordinates.y] = cell;
-  }
-
-  private createBuildCommand(coordinates: Coordinates) {
-    return `BUILD ${coordinates.x} ${coordinates.y};`;
-  }
-
-  private createMoveCommand({
-    amount,
-    fromX,
-    fromY,
-    toX,
-    toY,
-  }: {
-    amount: number;
-    fromX: number;
-    fromY: number;
-    toX: number;
-    toY: number;
-  }) {
-    return `MOVE ${amount} ${fromX} ${fromY} ${toX} ${toY};`;
-  }
-
-  private createSpawnCommand(amount: number, coordinates: Coordinates) {
-    return `SPAWN ${amount} ${coordinates.x} ${coordinates.y};`;
-  }
-
-  calculateDistance(aCoord: Coordinates, bCoord: Coordinates) {
-    const x = Math.abs(bCoord.x - aCoord.x);
-    const y = Math.abs(bCoord.y - aCoord.y);
-    return x + y;
-  }
-
-  getDistances(fromCellArr: Cell[], toCellArr: Cell[]) {
-    let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
-    for (let fromCell of fromCellArr) {
-      for (let toCell of toCellArr) {
-        const distance = this.calculateDistance(
-          fromCell.coordinates,
-          toCell.coordinates
-        );
-        distanceArr = [
-          ...distanceArr,
-          { from: fromCell, to: toCell, distance },
-        ];
-      }
-    }
-    return distanceArr;
   }
 
   // checkAdjacentCellsForUnits(cell: Cell) {
@@ -285,35 +451,36 @@ class GameState {
 
   buildRecycler(myMatter: number): string[] {
     const commands: string[] = [];
-    if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
-      return [];
-    }
+    return [];
+    // if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
+    //   return [];
+    // }
 
-    for (const island of this.islands) {
-      if (
-        island.cells.every(
-          (cell) => cell.owner === Owner.ME || cell.owner === Owner.NEUTRAL
-        )
-      )
-        continue;
-      const potentialCells = island.cells
-        .filter(
-          (cell) =>
-            !cell.recycler &&
-            !cell.inRangeOfRecycler &&
-            cell.canBuild &&
-            this.checkAdjacentCellsForEnemyCells(cell)
-        )
-        .sort((a, b) => {
-          return b.scrapAmount - a.scrapAmount;
-        });
-      if (potentialCells.length === 0) {
-        continue;
-      }
-      const recyclerCell = potentialCells[0];
-      const buildCommand = this.createBuildCommand(recyclerCell.coordinates);
-      commands.push(buildCommand);
-    }
+    // for (const island of this.islands) {
+    //   if (
+    //     island.cells.every(
+    //       (cell) => cell.owner === Owner.ME || cell.owner === Owner.NEUTRAL
+    //     )
+    //   )
+    //     continue;
+    //   const potentialCells = island.cells
+    //     .filter(
+    //       (cell) =>
+    //         !cell.recycler &&
+    //         !cell.inRangeOfRecycler &&
+    //         cell.canBuild &&
+    //         this.checkAdjacentCellsForEnemyCells(cell)
+    //     )
+    //     .sort((a, b) => {
+    //       return b.scrapAmount - a.scrapAmount;
+    //     });
+    //   if (potentialCells.length === 0) {
+    //     continue;
+    //   }
+    //   const recyclerCell = potentialCells[0];
+    //   const buildCommand = this.createBuildCommand(recyclerCell.coordinates);
+    //   commands.push(buildCommand);
+    // }
     return commands;
   }
 
@@ -346,155 +513,157 @@ class GameState {
 
   moveRobots(): string[] {
     const commands: string[] = [];
-
-    for (const island of this.islands) {
-      if (island.isIslandAllOwnedByMe) {
-        continue;
-      }
-      const myRobotCells = island.getMyRobotCells();
-      const nuetralCells = island.getNuetralCells();
-      if (island.isIslandOwnedByMeWithNeutralCells) {
-        const tempNuetralCells = [...nuetralCells];
-        for (const robot of myRobotCells) {
-          if (tempNuetralCells.length === 0) break;
-          const moveToNuetralCell = tempNuetralCells.shift();
-          if (!moveToNuetralCell) break;
-          const moveCommand = this.createMoveCommand({
-            amount: robot.units,
-            fromX: robot.coordinates.x,
-            fromY: robot.coordinates.y,
-            toX: moveToNuetralCell.coordinates.x,
-            toY: moveToNuetralCell.coordinates.y,
-          });
-          commands.push(moveCommand);
-        }
-        continue;
-      }
-
-      const oppCells = island.getOppCells();
-
-      for (const myRobotCell of myRobotCells) {
-        const adjacentCells = this.getAdjacentCells(myRobotCell);
-        const enemyCells = adjacentCells.filter(
-          (cell) => cell.owner === Owner.FOE
-        );
-        if (enemyCells.length > 0) {
-          const moveCommand = this.createMoveCommand({
-            amount: myRobotCell.units,
-            fromX: myRobotCell.coordinates.x,
-            fromY: myRobotCell.coordinates.y,
-            toX: enemyCells[0].coordinates.x,
-            toY: enemyCells[0].coordinates.y,
-          });
-          console.error("moving to enemy cell");
-          commands.push(moveCommand);
-          continue;
-        }
-        const nuetralCells = adjacentCells.filter(
-          (cell) => cell.owner === Owner.NEUTRAL
-        );
-        if (nuetralCells.length > 0) {
-          const moveCommand = this.createMoveCommand({
-            amount: myRobotCell.units,
-            fromX: myRobotCell.coordinates.x,
-            fromY: myRobotCell.coordinates.y,
-            toX: nuetralCells[0].coordinates.x,
-            toY: nuetralCells[0].coordinates.y,
-          });
-          console.error("moving to nuetral cell");
-          commands.push(moveCommand);
-          continue;
-        }
-        const moveToClosestOppCell = this.getDistances(
-          [myRobotCell],
-          oppCells
-        ).sort((a, b) => a.distance - b.distance);
-        if (moveToClosestOppCell.length > 0) {
-          const moveCommand = this.createMoveCommand({
-            amount: myRobotCell.units,
-            fromX: myRobotCell.coordinates.x,
-            fromY: myRobotCell.coordinates.y,
-            toX: moveToClosestOppCell[0].to.coordinates.x,
-            toY: moveToClosestOppCell[0].to.coordinates.y,
-          });
-          console.error("moving to closest opp cell");
-          commands.push(moveCommand);
-          continue;
-        }
-        const moveToClosestNuetralCell = this.getDistances(
-          [myRobotCell],
-          nuetralCells
-        ).sort((a, b) => a.distance - b.distance);
-        if (moveToClosestNuetralCell.length > 0) {
-          const moveCommand = this.createMoveCommand({
-            amount: myRobotCell.units,
-            fromX: myRobotCell.coordinates.x,
-            fromY: myRobotCell.coordinates.y,
-            toX: moveToClosestNuetralCell[0].to.coordinates.x,
-            toY: moveToClosestNuetralCell[0].to.coordinates.y,
-          });
-          console.error("moving to closest nuetral cell");
-          commands.push(moveCommand);
-          continue;
-        }
-      }
-    }
-
     return commands;
+
+    // for (const island of this.islands) {
+    //   if (island.isIslandAllOwnedByMe) {
+    //     continue;
+    //   }
+    //   const myRobotCells = island.getMyRobotCells();
+    //   const nuetralCells = island.getNuetralCells();
+    //   if (island.isIslandOwnedByMeWithNeutralCells) {
+    //     const tempNuetralCells = [...nuetralCells];
+    //     for (const robot of myRobotCells) {
+    //       if (tempNuetralCells.length === 0) break;
+    //       const moveToNuetralCell = tempNuetralCells.shift();
+    //       if (!moveToNuetralCell) break;
+    //       const moveCommand = this.createMoveCommand({
+    //         amount: robot.units,
+    //         fromX: robot.coordinates.x,
+    //         fromY: robot.coordinates.y,
+    //         toX: moveToNuetralCell.coordinates.x,
+    //         toY: moveToNuetralCell.coordinates.y,
+    //       });
+    //       commands.push(moveCommand);
+    //     }
+    //     continue;
+    //   }
+
+    //   const oppCells = island.getOppCells();
+
+    //   for (const myRobotCell of myRobotCells) {
+    //     const adjacentCells = this.getAdjacentCells(myRobotCell);
+    //     const enemyCells = adjacentCells.filter(
+    //       (cell) => cell.owner === Owner.FOE
+    //     );
+    //     if (enemyCells.length > 0) {
+    //       const moveCommand = this.createMoveCommand({
+    //         amount: myRobotCell.units,
+    //         fromX: myRobotCell.coordinates.x,
+    //         fromY: myRobotCell.coordinates.y,
+    //         toX: enemyCells[0].coordinates.x,
+    //         toY: enemyCells[0].coordinates.y,
+    //       });
+    //       console.error("moving to enemy cell");
+    //       commands.push(moveCommand);
+    //       continue;
+    //     }
+    //     const nuetralCells = adjacentCells.filter(
+    //       (cell) => cell.owner === Owner.NEUTRAL
+    //     );
+    //     if (nuetralCells.length > 0) {
+    //       const moveCommand = this.createMoveCommand({
+    //         amount: myRobotCell.units,
+    //         fromX: myRobotCell.coordinates.x,
+    //         fromY: myRobotCell.coordinates.y,
+    //         toX: nuetralCells[0].coordinates.x,
+    //         toY: nuetralCells[0].coordinates.y,
+    //       });
+    //       console.error("moving to nuetral cell");
+    //       commands.push(moveCommand);
+    //       continue;
+    //     }
+    //     const moveToClosestOppCell = this.getDistances(
+    //       [myRobotCell],
+    //       oppCells
+    //     ).sort((a, b) => a.distance - b.distance);
+    //     if (moveToClosestOppCell.length > 0) {
+    //       const moveCommand = this.createMoveCommand({
+    //         amount: myRobotCell.units,
+    //         fromX: myRobotCell.coordinates.x,
+    //         fromY: myRobotCell.coordinates.y,
+    //         toX: moveToClosestOppCell[0].to.coordinates.x,
+    //         toY: moveToClosestOppCell[0].to.coordinates.y,
+    //       });
+    //       console.error("moving to closest opp cell");
+    //       commands.push(moveCommand);
+    //       continue;
+    //     }
+    //     const moveToClosestNuetralCell = this.getDistances(
+    //       [myRobotCell],
+    //       nuetralCells
+    //     ).sort((a, b) => a.distance - b.distance);
+    //     if (moveToClosestNuetralCell.length > 0) {
+    //       const moveCommand = this.createMoveCommand({
+    //         amount: myRobotCell.units,
+    //         fromX: myRobotCell.coordinates.x,
+    //         fromY: myRobotCell.coordinates.y,
+    //         toX: moveToClosestNuetralCell[0].to.coordinates.x,
+    //         toY: moveToClosestNuetralCell[0].to.coordinates.y,
+    //       });
+    //       console.error("moving to closest nuetral cell");
+    //       commands.push(moveCommand);
+    //       continue;
+    //     }
+    //   }
+    // }
+
+    // return commands;
   }
 
   spawnRobots(myMatter: number): string[] {
     console.error({ myMatter });
     const commands: string[] = [];
-    if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
-      return [];
-    }
-    const spawnRobotLimit = Math.floor(myMatter / this.RECYCLER_AND_SPAWN_COST);
-    const maxSpawn = spawnRobotLimit;
-
-    if (maxSpawn <= 0) return [];
-    console.error({ maxSpawn });
-
-    for (const island of this.islands) {
-      if (island.isIslandAllOwnedByMe) continue;
-      const myRobotCells = island.getMyRobotCells();
-      if (
-        island.isIslandOwnedByMeWithNeutralCells &&
-        myRobotCells.length === 0
-      ) {
-        const spawnCommand = this.createSpawnCommand(
-          1,
-          myRobotCells[0].coordinates
-        );
-        console.error("spawning on isIslandOwnedByMeWithNeutralCells cell");
-        commands.push(spawnCommand);
-        continue;
-      }
-      const myCells = island.getMyCells();
-      const enemyRobots = island.getOppRobotCells();
-      const closestRobots = this.getDistances(myCells, enemyRobots).sort(
-        (a, b) => a.distance - b.distance
-      );
-      if (closestRobots.length === 0) {
-        return [];
-      }
-      for (let i = 0; i < maxSpawn; i++) {
-        const closestRobot = closestRobots.shift();
-        if (!closestRobot) continue;
-        const adjacentCells = this.getAdjacentCells(closestRobot.from).filter(
-          (cell) => cell.scrapAmount > 0
-        );
-        if (adjacentCells.length === 0) return [];
-        const spawnCommand = this.createSpawnCommand(
-          1,
-          closestRobot.from.coordinates
-        );
-        console.error("spawning on closestRobot cell");
-        commands.push(spawnCommand);
-      }
-    }
-
     return commands;
+    // if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
+    //   return [];
+    // }
+    // const spawnRobotLimit = Math.floor(myMatter / this.RECYCLER_AND_SPAWN_COST);
+    // const maxSpawn = spawnRobotLimit;
+
+    // if (maxSpawn <= 0) return [];
+    // console.error({ maxSpawn });
+
+    // for (const island of this.islands) {
+    //   if (island.isIslandAllOwnedByMe) continue;
+    //   const myRobotCells = island.getMyRobotCells();
+    //   if (
+    //     island.isIslandOwnedByMeWithNeutralCells &&
+    //     myRobotCells.length === 0
+    //   ) {
+    //     const spawnCommand = this.createSpawnCommand(
+    //       1,
+    //       myRobotCells[0].coordinates
+    //     );
+    //     console.error("spawning on isIslandOwnedByMeWithNeutralCells cell");
+    //     commands.push(spawnCommand);
+    //     continue;
+    //   }
+    //   const myCells = island.getMyCells();
+    //   const enemyRobots = island.getOppRobotCells();
+    //   const closestRobots = this.getDistances(myCells, enemyRobots).sort(
+    //     (a, b) => a.distance - b.distance
+    //   );
+    //   if (closestRobots.length === 0) {
+    //     return [];
+    //   }
+    //   for (let i = 0; i < maxSpawn; i++) {
+    //     const closestRobot = closestRobots.shift();
+    //     if (!closestRobot) continue;
+    //     const adjacentCells = this.getAdjacentCells(closestRobot.from).filter(
+    //       (cell) => cell.scrapAmount > 0
+    //     );
+    //     if (adjacentCells.length === 0) return [];
+    //     const spawnCommand = this.createSpawnCommand(
+    //       1,
+    //       closestRobot.from.coordinates
+    //     );
+    //     console.error("spawning on closestRobot cell");
+    //     commands.push(spawnCommand);
+    //   }
+    // }
+
+    // return commands;
   }
 
   findIslands() {
@@ -527,7 +696,38 @@ class GameState {
         if (isValidCell(this.cells[i][j])) {
           dfs(i, j);
           if (islandCells.length === 0) continue;
-          islands = [...islands, new Island(islandCells)];
+          const totalIslandCells = islandCells.length;
+          const myCellsLength = islandCells.filter(
+            (cell) => cell.owner === Owner.ME
+          ).length;
+          const enemyCellsLength = islandCells.filter(
+            (cell) => cell.owner === Owner.FOE
+          ).length;
+          const nuetralCellsLength = islandCells.filter(
+            (cell) => cell.owner === Owner.NEUTRAL
+          ).length;
+
+          const nuetralIsland = nuetralCellsLength === totalIslandCells;
+          const enemyIsland = enemyCellsLength === totalIslandCells;
+
+          if (nuetralIsland || enemyIsland) continue;
+
+          const myIsland = totalIslandCells === myCellsLength;
+          const islandWithMeAndNuetral =
+            myCellsLength + nuetralCellsLength === totalIslandCells;
+          const islandWithMeAndEnemy =
+            myCellsLength + enemyCellsLength + nuetralCellsLength ===
+            totalIslandCells;
+          if (myIsland) {
+            console.error("myIsland");
+            islands = [...islands, new IslandOnlyMe(islandCells)];
+          } else if (islandWithMeAndNuetral) {
+            console.error("IslandWithMeAndNeutral");
+            islands = [...islands, new IslandWithMeAndNeutral(islandCells)];
+          } else if (islandWithMeAndEnemy) {
+            console.error("IslandWithMeAndEnemy");
+            islands = [...islands, new IslandWithMeAndEnemy(islandCells)];
+          }
           islandCells = [];
         }
       }
@@ -537,37 +737,25 @@ class GameState {
 
   cleanUpTurn() {
     this.cells = [];
-    this.islands = [];
+    this.archipelagos = null;
   }
 
   processTurn() {
-    this.islands = this.findIslands();
-    let myMatter = this.myMatter;
-
-    for (const island of this.islands) {
-    }
-
-    const buildRecyclerCommand = this.buildRecycler(myMatter);
-    myMatter =
-      myMatter - buildRecyclerCommand.length * this.RECYCLER_AND_SPAWN_COST;
-    const spawnRobotsCommand = this.spawnRobots(myMatter);
-    const moveRobotsCommand = this.moveRobots();
-
-    const command = [
-      buildRecyclerCommand,
-      moveRobotsCommand,
-      spawnRobotsCommand,
-    ]
-      .flatMap((c) => c)
-      .join("");
-
+    const islands = this.findIslands();
+    this.archipelagos = new Archipelagos(
+      islands,
+      this.myMatter,
+      this.RECYCLER_AND_SPAWN_COST
+    );
+    const actions = this.archipelagos.processTurn();
+    const command = actions.map((action) => action.toString()).join("");
     this.cleanUpTurn();
     return command;
   }
 }
 
 const gameState = new GameState(height, width);
-let tick = 0;
+
 // game loop
 while (true) {
   var inputs: string[] = readline().split(" ");
