@@ -20,7 +20,7 @@ function getDistances(
   let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
   for (let fromCell of fromCellArr) {
     for (let toCell of toCellArr) {
-      const distance = this.calculateDistance(
+      const distance = calculateDistance(
         fromCell.coordinates,
         toCell.coordinates
       );
@@ -28,6 +28,23 @@ function getDistances(
     }
   }
   return distanceArr;
+}
+
+function getAdjacentCells(cell: Cell, height: number, width: number): Cell[] {
+  let adjacentCells: Cell[] = [];
+  if (cell.coordinates.x > 0) {
+    adjacentCells.push(this.cells[cell.coordinates.x - 1][cell.coordinates.y]);
+  }
+  if (cell.coordinates.x < width - 1) {
+    adjacentCells.push(this.cells[cell.coordinates.x + 1][cell.coordinates.y]);
+  }
+  if (cell.coordinates.y > 0) {
+    adjacentCells.push(this.cells[cell.coordinates.x][cell.coordinates.y - 1]);
+  }
+  if (cell.coordinates.y < height - 1) {
+    adjacentCells.push(this.cells[cell.coordinates.x][cell.coordinates.y + 1]);
+  }
+  return adjacentCells.filter((cell) => cell.scrapAmount > 0 && !cell.recycler);
 }
 
 function getClosestCells(
@@ -142,6 +159,8 @@ class Archipelagos {
   private _costToBuildOrSpawn: number;
 
   constructor(islands: Island[], myMatter: number, costToBuildOrSpawn: number) {
+    this._myMatter = myMatter;
+    this._costToBuildOrSpawn = costToBuildOrSpawn;
     this._islands = islands.sort((a, b) => {
       if (a instanceof IslandWithMeAndEnemy) {
         return 1;
@@ -157,8 +176,6 @@ class Archipelagos {
       }
       return 0;
     });
-    this._myMatter = myMatter;
-    this._costToBuildOrSpawn = costToBuildOrSpawn;
   }
 
   get costToBuildOrSpawn() {
@@ -198,7 +215,7 @@ class Archipelagos {
 }
 
 abstract class Island {
-  protected _cells: Cell[] = [];
+  private _cells: Cell[] = [];
 
   constructor(cells: Cell[]) {
     this._cells = cells;
@@ -262,6 +279,68 @@ abstract class Island {
     return this.cells.filter((cell) => cell.owner === Owner.ME);
   }
 
+  getMyPerimeterCells() {
+    const myCells = this.getMyCells();
+    return myCells.filter((cell) => {
+      const northCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x &&
+          cell.coordinates.y === cell.coordinates.y - 1
+      );
+      const southCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x &&
+          cell.coordinates.y === cell.coordinates.y + 1
+      );
+      const eastCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x + 1 &&
+          cell.coordinates.y === cell.coordinates.y
+      );
+      const westCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x - 1 &&
+          cell.coordinates.y === cell.coordinates.y
+      );
+      if (northCell?.owner !== Owner.ME) return true;
+      if (southCell?.owner !== Owner.ME) return true;
+      if (eastCell?.owner !== Owner.ME) return true;
+      if (westCell?.owner !== Owner.ME) return true;
+      return false;
+    });
+  }
+
+  getEnemyPerimeterCells() {
+    const enemyCells = this.getEnemyCells();
+    return enemyCells.filter((cell) => {
+      const northCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x &&
+          cell.coordinates.y === cell.coordinates.y - 1
+      );
+      const southCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x &&
+          cell.coordinates.y === cell.coordinates.y + 1
+      );
+      const eastCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x + 1 &&
+          cell.coordinates.y === cell.coordinates.y
+      );
+      const westCell = this.cells.find(
+        (cell) =>
+          cell.coordinates.x === cell.coordinates.x - 1 &&
+          cell.coordinates.y === cell.coordinates.y
+      );
+      if (northCell?.owner !== Owner.FOE) return true;
+      if (southCell?.owner !== Owner.FOE) return true;
+      if (eastCell?.owner !== Owner.FOE) return true;
+      if (westCell?.owner !== Owner.FOE) return true;
+      return false;
+    });
+  }
+
   getEnemyCells() {
     return this.cells.filter((cell) => cell.owner === Owner.FOE);
   }
@@ -284,11 +363,8 @@ abstract class Island {
 }
 
 class IslandOnlyMe extends Island {
-  protected _cells: Cell[] = [];
-
   constructor(cells: Cell[]) {
     super(cells);
-    this._cells = cells;
   }
 
   getBuildActions(): BuildAction[] {
@@ -305,33 +381,130 @@ class IslandOnlyMe extends Island {
 }
 
 class IslandWithMeAndEnemy extends Island {
-  protected _myCells: Cell[] = [];
-  protected _oppCells: Cell[] = [];
-  protected _perimeterCells: Cell[] = [];
-
   constructor(cells: Cell[]) {
     super(cells);
   }
 
   getBuildActions(): BuildAction[] {
-    return [];
+    const myCells = this.getMyCells();
+    if (myCells.length === 0) return [];
+
+    // const myTotalRecyclers = myCells.filter((cell) => cell.recycler).length + 1;
+    // const enemyTotalRecyclers = this.getEnemyCells().filter(
+    //   (cell) => cell.recycler
+    // ).length;
+
+    // if (myTotalRecyclers > enemyTotalRecyclers) return [];
+
+    const potentialRecyclerCells = myCells
+      .map((cell) => {
+        const northCellScrapAmount =
+          this.cells.find(
+            (cell) =>
+              cell.coordinates.x === cell.coordinates.x &&
+              cell.coordinates.y === cell.coordinates.y - 1
+          )?.scrapAmount ?? 0;
+        const southCellScrapAmount =
+          this.cells.find(
+            (cell) =>
+              cell.coordinates.x === cell.coordinates.x &&
+              cell.coordinates.y === cell.coordinates.y + 1
+          )?.scrapAmount ?? 0;
+        const eastCellScrapAmount =
+          this.cells.find(
+            (cell) =>
+              cell.coordinates.x === cell.coordinates.x + 1 &&
+              cell.coordinates.y === cell.coordinates.y
+          )?.scrapAmount ?? 0;
+        const westCellScrapAmount =
+          this.cells.find(
+            (cell) =>
+              cell.coordinates.x === cell.coordinates.x - 1 &&
+              cell.coordinates.y === cell.coordinates.y
+          )?.scrapAmount ?? 0;
+        const totalScrapAmount =
+          cell.scrapAmount +
+          northCellScrapAmount +
+          southCellScrapAmount +
+          eastCellScrapAmount +
+          westCellScrapAmount;
+        return { cell, totalScrapAmount };
+      })
+      .sort((a, b) => b.totalScrapAmount - a.totalScrapAmount);
+
+    if (potentialRecyclerCells.length === 0) return [];
+
+    const potentialRecyclerCell = potentialRecyclerCells[0].cell;
+    const buildAction = new BuildAction(potentialRecyclerCell.coordinates);
+    return [buildAction];
   }
 
   getMoveActions(): MoveAction[] {
-    return [];
+    const myRobotCells = this.getMyRobotCells();
+    if (myRobotCells.length === 0) return [];
+    let enemyPerimeterCells = this.getEnemyPerimeterCells();
+    let moveActions: MoveAction[] = [];
+    for (const robotCell of myRobotCells) {
+      let robotUnits = robotCell.units;
+      const closestCells = getClosestCells([robotCell], enemyPerimeterCells);
+      for (let unit = 0; unit < robotCell.units; unit++) {
+        const closestCell = closestCells.shift();
+        if (!closestCell) break;
+        if (closestCell.distance <= 1 && robotUnits <= 1) continue;
+        const moveAction = new MoveAction({
+          amount: 1,
+          fromX: robotCell.coordinates.x,
+          fromY: robotCell.coordinates.y,
+          toX: closestCell.to.coordinates.x,
+          toY: closestCell.to.coordinates.y,
+        });
+        enemyPerimeterCells.filter(
+          (cell) =>
+            cell.coordinates.x !== closestCell.to.coordinates.x &&
+            cell.coordinates.y !== closestCell.to.coordinates.y
+        );
+        moveActions.push(moveAction);
+        robotUnits--;
+      }
+    }
+    return moveActions;
   }
 
   getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
-    return [];
+    const myPerimeterCells = this.getMyPerimeterCells();
+    if (myPerimeterCells.length === 0) return [];
+    const nuetralCells = this.getNuetralCells();
+    let enemyPerimeterCells = this.getEnemyPerimeterCells();
+    let spawnActions: SpawnAction[] = [];
+    const closestPerimeterEnemyCells = getClosestCells(
+      myPerimeterCells,
+      enemyPerimeterCells
+    ).sort((a, b) => a.from.units - b.from.units);
+    const closestPerimeterNuetralCells = getClosestCells(
+      myPerimeterCells,
+      nuetralCells
+    ).sort((a, b) => a.from.units - b.from.units);
+    let closestPerimeterCells = [
+      ...closestPerimeterEnemyCells,
+      ...closestPerimeterNuetralCells,
+    ];
+    for (let i = 0; i < maxNumberOfSpawnActions; i++) {
+      const closestPerimeterCell = closestPerimeterCells.shift();
+      if (!closestPerimeterCell) break;
+      const spawnAction = new SpawnAction({
+        amount: 1,
+        x: closestPerimeterCell.from.coordinates.x,
+        y: closestPerimeterCell.from.coordinates.y,
+      });
+      spawnActions.push(spawnAction);
+    }
+    return spawnActions;
   }
 }
 
 class IslandWithMeAndNeutral extends Island {
-  protected _cells: Cell[] = [];
-
   constructor(cells: Cell[]) {
     super(cells);
-    this._cells = cells;
   }
 
   getBuildActions(): BuildAction[] {
@@ -445,197 +618,6 @@ class GameState {
       this.cells[cell.coordinates.x] = [];
     }
     this.cells[cell.coordinates.x][cell.coordinates.y] = cell;
-  }
-
-  // checkAdjacentCellsForUnits(cell: Cell) {
-  //   const adjacentCells = this.getAdjacentCells(cell);
-  //   const hasUnits = adjacentCells.filter((cell) => cell.units > 0);
-  //   if (hasUnits) {
-  //     return false;
-  //   }
-  //   return true;
-  // }
-
-  // checkAdjacentCellsForGrass(cell: Cell) {
-  //   const adjacentCells = this.getAdjacentCells(cell);
-  //   const hasGrass = adjacentCells.filter((cell) => cell.scrapAmount === 0);
-  //   if (hasGrass.length > 0) {
-  //     return true;
-  //   }
-  //   return false;
-  // }
-
-  checkAdjacentCellsForEnemyCells(cell: Cell) {
-    const adjacentCells = this.getAdjacentCells(cell);
-    const enemyCellLength = adjacentCells.filter(
-      (cell) => cell.owner === Owner.FOE
-    );
-    if (enemyCellLength.length > 0) {
-      return true;
-    }
-    return false;
-  }
-
-  buildRecycler(myMatter: number): string[] {
-    const commands: string[] = [];
-    return [];
-    // if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
-    //   return [];
-    // }
-
-    // for (const island of this.islands) {
-    //   if (
-    //     island.cells.every(
-    //       (cell) => cell.owner === Owner.ME || cell.owner === Owner.NEUTRAL
-    //     )
-    //   )
-    //     continue;
-    //   const potentialCells = island.cells
-    //     .filter(
-    //       (cell) =>
-    //         !cell.recycler &&
-    //         !cell.inRangeOfRecycler &&
-    //         cell.canBuild &&
-    //         this.checkAdjacentCellsForEnemyCells(cell)
-    //     )
-    //     .sort((a, b) => {
-    //       return b.scrapAmount - a.scrapAmount;
-    //     });
-    //   if (potentialCells.length === 0) {
-    //     continue;
-    //   }
-    //   const recyclerCell = potentialCells[0];
-    //   const buildCommand = this.createBuildCommand(recyclerCell.coordinates);
-    //   commands.push(buildCommand);
-    // }
-    return commands;
-  }
-
-  getAdjacentCells(cell: Cell): Cell[] {
-    let adjacentCells: Cell[] = [];
-    if (cell.coordinates.x > 0) {
-      adjacentCells.push(
-        this.cells[cell.coordinates.x - 1][cell.coordinates.y]
-      );
-    }
-    if (cell.coordinates.x < this.width - 1) {
-      adjacentCells.push(
-        this.cells[cell.coordinates.x + 1][cell.coordinates.y]
-      );
-    }
-    if (cell.coordinates.y > 0) {
-      adjacentCells.push(
-        this.cells[cell.coordinates.x][cell.coordinates.y - 1]
-      );
-    }
-    if (cell.coordinates.y < this.height - 1) {
-      adjacentCells.push(
-        this.cells[cell.coordinates.x][cell.coordinates.y + 1]
-      );
-    }
-    return adjacentCells.filter(
-      (cell) => cell.scrapAmount > 0 && !cell.recycler
-    );
-  }
-
-  moveRobots(): string[] {
-    const commands: string[] = [];
-    return commands;
-
-    // for (const island of this.islands) {
-    //   if (island.isIslandAllOwnedByMe) {
-    //     continue;
-    //   }
-    //   const myRobotCells = island.getMyRobotCells();
-    //   const nuetralCells = island.getNuetralCells();
-    //   if (island.isIslandOwnedByMeWithNeutralCells) {
-    //     const tempNuetralCells = [...nuetralCells];
-    //     for (const robot of myRobotCells) {
-    //       if (tempNuetralCells.length === 0) break;
-    //       const moveToNuetralCell = tempNuetralCells.shift();
-    //       if (!moveToNuetralCell) break;
-    //       const moveCommand = this.createMoveCommand({
-    //         amount: robot.units,
-    //         fromX: robot.coordinates.x,
-    //         fromY: robot.coordinates.y,
-    //         toX: moveToNuetralCell.coordinates.x,
-    //         toY: moveToNuetralCell.coordinates.y,
-    //       });
-    //       commands.push(moveCommand);
-    //     }
-    //     continue;
-    //   }
-
-    //   const oppCells = island.getOppCells();
-
-    //   for (const myRobotCell of myRobotCells) {
-    //     const adjacentCells = this.getAdjacentCells(myRobotCell);
-    //     const enemyCells = adjacentCells.filter(
-    //       (cell) => cell.owner === Owner.FOE
-    //     );
-    //     if (enemyCells.length > 0) {
-    //       const moveCommand = this.createMoveCommand({
-    //         amount: myRobotCell.units,
-    //         fromX: myRobotCell.coordinates.x,
-    //         fromY: myRobotCell.coordinates.y,
-    //         toX: enemyCells[0].coordinates.x,
-    //         toY: enemyCells[0].coordinates.y,
-    //       });
-    //       console.error("moving to enemy cell");
-    //       commands.push(moveCommand);
-    //       continue;
-    //     }
-    //     const nuetralCells = adjacentCells.filter(
-    //       (cell) => cell.owner === Owner.NEUTRAL
-    //     );
-    //     if (nuetralCells.length > 0) {
-    //       const moveCommand = this.createMoveCommand({
-    //         amount: myRobotCell.units,
-    //         fromX: myRobotCell.coordinates.x,
-    //         fromY: myRobotCell.coordinates.y,
-    //         toX: nuetralCells[0].coordinates.x,
-    //         toY: nuetralCells[0].coordinates.y,
-    //       });
-    //       console.error("moving to nuetral cell");
-    //       commands.push(moveCommand);
-    //       continue;
-    //     }
-    //     const moveToClosestOppCell = this.getDistances(
-    //       [myRobotCell],
-    //       oppCells
-    //     ).sort((a, b) => a.distance - b.distance);
-    //     if (moveToClosestOppCell.length > 0) {
-    //       const moveCommand = this.createMoveCommand({
-    //         amount: myRobotCell.units,
-    //         fromX: myRobotCell.coordinates.x,
-    //         fromY: myRobotCell.coordinates.y,
-    //         toX: moveToClosestOppCell[0].to.coordinates.x,
-    //         toY: moveToClosestOppCell[0].to.coordinates.y,
-    //       });
-    //       console.error("moving to closest opp cell");
-    //       commands.push(moveCommand);
-    //       continue;
-    //     }
-    //     const moveToClosestNuetralCell = this.getDistances(
-    //       [myRobotCell],
-    //       nuetralCells
-    //     ).sort((a, b) => a.distance - b.distance);
-    //     if (moveToClosestNuetralCell.length > 0) {
-    //       const moveCommand = this.createMoveCommand({
-    //         amount: myRobotCell.units,
-    //         fromX: myRobotCell.coordinates.x,
-    //         fromY: myRobotCell.coordinates.y,
-    //         toX: moveToClosestNuetralCell[0].to.coordinates.x,
-    //         toY: moveToClosestNuetralCell[0].to.coordinates.y,
-    //       });
-    //       console.error("moving to closest nuetral cell");
-    //       commands.push(moveCommand);
-    //       continue;
-    //     }
-    //   }
-    // }
-
-    // return commands;
   }
 
   findIslands() {
