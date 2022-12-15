@@ -138,7 +138,7 @@ interface Cell {
 
 class Archipelagos {
   private _islands: Island[] = [];
-  private _myMatter: number;
+  private _myMatter: number = 0;
   private _costToBuildOrSpawn: number;
 
   constructor(islands: Island[], myMatter: number, costToBuildOrSpawn: number) {
@@ -177,9 +177,10 @@ class Archipelagos {
     this._myMatter = value;
   }
 
-  decrementMatter(amount: number) {
-    this.myMatter -= amount;
-  }
+  decrementMatter = (amount: number) => {
+    console.error({ matt: this.myMatter, amount });
+    this.myMatter = this.myMatter - amount;
+  };
 
   processTurn(): Action[] {
     const actions: Action[] = [];
@@ -214,10 +215,12 @@ abstract class Island {
   protected generateBuildActions(
     matter: number,
     costToBuildOrSpawn: number,
-    decrementMatter: () => void
+    decrementMatter: (amount: number) => void
   ): BuildAction[] {
     if (matter < costToBuildOrSpawn) return [];
-    return this.getBuildActions();
+    const buildActions = this.getBuildActions();
+    decrementMatter(buildActions.length * costToBuildOrSpawn);
+    return buildActions;
   }
 
   protected generateMoveActions(): MoveAction[] {
@@ -229,8 +232,8 @@ abstract class Island {
     costToBuildOrSpawn: number,
     decrementMatter: (amount: number) => void
   ): SpawnAction[] {
-    if (matter < costToBuildOrSpawn) return [];
     const maxNumberOfSpawnActions = Math.floor(matter / costToBuildOrSpawn);
+    if (maxNumberOfSpawnActions < 1) return [];
     const spawnActions = this.getSpawnActions(maxNumberOfSpawnActions);
     decrementMatter(spawnActions.length * costToBuildOrSpawn);
     return spawnActions;
@@ -336,12 +339,36 @@ class IslandWithMeAndNeutral extends Island {
   }
 
   getMoveActions(): MoveAction[] {
-    return [];
+    const myRobotCells = this.getMyRobotCells();
+    if (myRobotCells.length === 0) return [];
+    let nuetralCells = this.getNuetralCells();
+    let moveActions: MoveAction[] = [];
+    for (const robotCell of myRobotCells) {
+      const closestCells = getClosestCells([robotCell], nuetralCells);
+      for (let unit = 0; unit < robotCell.units; unit++) {
+        const closestCell = closestCells.shift();
+        if (!closestCell) break;
+        const moveAction = new MoveAction({
+          amount: 1,
+          fromX: robotCell.coordinates.x,
+          fromY: robotCell.coordinates.y,
+          toX: closestCell.to.coordinates.x,
+          toY: closestCell.to.coordinates.y,
+        });
+        nuetralCells = nuetralCells.filter(
+          (cell) =>
+            cell.coordinates.x !== closestCell.to.coordinates.x &&
+            cell.coordinates.y !== closestCell.to.coordinates.y
+        );
+        moveActions.push(moveAction);
+      }
+    }
+    return moveActions;
   }
 
   getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
-    const totalMyRobots = this.getMyRobotCells().length;
-    if (totalMyRobots > 0) return [];
+    const myTotalRobots = this.getMyRobotCells().length;
+    if (myTotalRobots > 0) return [];
     const myCells = this.getMyCells();
     const nuetralCells = this.getNuetralCells();
     const closestCell = getClosestCells(myCells, nuetralCells)[0].from;
@@ -611,61 +638,6 @@ class GameState {
     // return commands;
   }
 
-  spawnRobots(myMatter: number): string[] {
-    console.error({ myMatter });
-    const commands: string[] = [];
-    return commands;
-    // if (myMatter < this.RECYCLER_AND_SPAWN_COST) {
-    //   return [];
-    // }
-    // const spawnRobotLimit = Math.floor(myMatter / this.RECYCLER_AND_SPAWN_COST);
-    // const maxSpawn = spawnRobotLimit;
-
-    // if (maxSpawn <= 0) return [];
-    // console.error({ maxSpawn });
-
-    // for (const island of this.islands) {
-    //   if (island.isIslandAllOwnedByMe) continue;
-    //   const myRobotCells = island.getMyRobotCells();
-    //   if (
-    //     island.isIslandOwnedByMeWithNeutralCells &&
-    //     myRobotCells.length === 0
-    //   ) {
-    //     const spawnCommand = this.createSpawnCommand(
-    //       1,
-    //       myRobotCells[0].coordinates
-    //     );
-    //     console.error("spawning on isIslandOwnedByMeWithNeutralCells cell");
-    //     commands.push(spawnCommand);
-    //     continue;
-    //   }
-    //   const myCells = island.getMyCells();
-    //   const enemyRobots = island.getOppRobotCells();
-    //   const closestRobots = this.getDistances(myCells, enemyRobots).sort(
-    //     (a, b) => a.distance - b.distance
-    //   );
-    //   if (closestRobots.length === 0) {
-    //     return [];
-    //   }
-    //   for (let i = 0; i < maxSpawn; i++) {
-    //     const closestRobot = closestRobots.shift();
-    //     if (!closestRobot) continue;
-    //     const adjacentCells = this.getAdjacentCells(closestRobot.from).filter(
-    //       (cell) => cell.scrapAmount > 0
-    //     );
-    //     if (adjacentCells.length === 0) return [];
-    //     const spawnCommand = this.createSpawnCommand(
-    //       1,
-    //       closestRobot.from.coordinates
-    //     );
-    //     console.error("spawning on closestRobot cell");
-    //     commands.push(spawnCommand);
-    //   }
-    // }
-
-    // return commands;
-  }
-
   findIslands() {
     let islands: Island[] = [];
     let islandCells: Cell[] = [];
@@ -750,7 +722,7 @@ class GameState {
     const actions = this.archipelagos.processTurn();
     const command = actions.map((action) => action.toString()).join("");
     this.cleanUpTurn();
-    return command;
+    return command === "" ? "WAIT" : command;
   }
 }
 
