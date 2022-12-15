@@ -755,7 +755,8 @@ class GameState {
     const spawnActions: SpawnAction[] = [];
     const recyclers = this.getAllRecyclers();
     const allowedToBuild =
-      recyclers.myRecyclers.length < recyclers.enemyRecyclers.length;
+      recyclers.myRecyclers.length < recyclers.enemyRecyclers.length ||
+      recyclers.myRecyclers.length < 2;
     this.islands = this.findIslands();
     for (const island of this.islands) {
       buildActions.push(
