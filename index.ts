@@ -19,30 +19,43 @@ function getDistances(
 ): { from: Cell; to: Cell; distance: number }[] {
   let distanceArr: { from: Cell; to: Cell; distance: number }[] = [];
   for (let fromCell of fromCellArr) {
+    let tempDistanceArr: { from: Cell; to: Cell; distance: number }[] = [];
     for (let toCell of toCellArr) {
       const distance = calculateDistance(
         fromCell.coordinates,
         toCell.coordinates
       );
-      distanceArr = [...distanceArr, { from: fromCell, to: toCell, distance }];
+      tempDistanceArr = [
+        ...tempDistanceArr,
+        { from: fromCell, to: toCell, distance },
+      ];
     }
+    const shortestDistance = tempDistanceArr.sort(
+      (a, b) => a.distance - b.distance
+    )[0];
+    distanceArr = [...distanceArr, shortestDistance];
   }
   return distanceArr;
 }
 
-function getAdjacentCells(cell: Cell, height: number, width: number): Cell[] {
+function getAdjacentCells(
+  cellGrid: Cell[][],
+  cell: Cell,
+  height: number,
+  width: number
+): Cell[] {
   let adjacentCells: Cell[] = [];
   if (cell.coordinates.x > 0) {
-    adjacentCells.push(this.cells[cell.coordinates.x - 1][cell.coordinates.y]);
+    adjacentCells.push(cellGrid[cell.coordinates.x - 1][cell.coordinates.y]);
   }
   if (cell.coordinates.x < width - 1) {
-    adjacentCells.push(this.cells[cell.coordinates.x + 1][cell.coordinates.y]);
+    adjacentCells.push(cellGrid[cell.coordinates.x + 1][cell.coordinates.y]);
   }
   if (cell.coordinates.y > 0) {
-    adjacentCells.push(this.cells[cell.coordinates.x][cell.coordinates.y - 1]);
+    adjacentCells.push(cellGrid[cell.coordinates.x][cell.coordinates.y - 1]);
   }
   if (cell.coordinates.y < height - 1) {
-    adjacentCells.push(this.cells[cell.coordinates.x][cell.coordinates.y + 1]);
+    adjacentCells.push(cellGrid[cell.coordinates.x][cell.coordinates.y + 1]);
   }
   return adjacentCells.filter((cell) => cell.scrapAmount > 0 && !cell.recycler);
 }
@@ -153,67 +166,6 @@ interface Cell {
   visited: boolean;
 }
 
-class Archipelagos {
-  private _islands: Island[] = [];
-  private _myMatter: number = 0;
-  private _costToBuildOrSpawn: number;
-
-  constructor(islands: Island[], myMatter: number, costToBuildOrSpawn: number) {
-    this._myMatter = myMatter;
-    this._costToBuildOrSpawn = costToBuildOrSpawn;
-    this._islands = islands.sort((a, b) => {
-      if (a instanceof IslandWithMeAndEnemy) {
-        return 1;
-      }
-      if (b instanceof IslandWithMeAndEnemy) {
-        return -1;
-      }
-      if (a instanceof IslandWithMeAndNeutral) {
-        return 1;
-      }
-      if (b instanceof IslandWithMeAndNeutral) {
-        return -1;
-      }
-      return 0;
-    });
-  }
-
-  get costToBuildOrSpawn() {
-    return this._costToBuildOrSpawn;
-  }
-
-  get islands() {
-    return this._islands;
-  }
-
-  get myMatter() {
-    return this._myMatter;
-  }
-
-  protected set myMatter(value: number) {
-    this._myMatter = value;
-  }
-
-  decrementMatter = (amount: number) => {
-    console.error({ matt: this.myMatter, amount });
-    this.myMatter = this.myMatter - amount;
-  };
-
-  processTurn(): Action[] {
-    const actions: Action[] = [];
-    for (const island of this.islands) {
-      actions.push(
-        ...island.processTurn(
-          this.myMatter,
-          this.costToBuildOrSpawn,
-          this.decrementMatter
-        )
-      );
-    }
-    return actions;
-  }
-}
-
 abstract class Island {
   private _cells: Cell[] = [];
 
@@ -229,22 +181,23 @@ abstract class Island {
   abstract getMoveActions(): MoveAction[];
   abstract getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[];
 
-  protected generateBuildActions(
+  generateBuildActions(
+    allowedToBuild: boolean,
     matter: number,
     costToBuildOrSpawn: number,
     decrementMatter: (amount: number) => void
   ): BuildAction[] {
-    if (matter < costToBuildOrSpawn) return [];
+    if (matter < costToBuildOrSpawn || !allowedToBuild) return [];
     const buildActions = this.getBuildActions();
     decrementMatter(buildActions.length * costToBuildOrSpawn);
     return buildActions;
   }
 
-  protected generateMoveActions(): MoveAction[] {
+  generateMoveActions(): MoveAction[] {
     return this.getMoveActions();
   }
 
-  protected generateSpawnActions(
+  generateSpawnActions(
     matter: number,
     costToBuildOrSpawn: number,
     decrementMatter: (amount: number) => void
@@ -256,25 +209,6 @@ abstract class Island {
     return spawnActions;
   }
 
-  processTurn(
-    matter: number,
-    costToBuildOrSpawn: number,
-    decrementMatter: (amount: number) => void
-  ): Action[] {
-    const buildActions = this.generateBuildActions(
-      matter,
-      costToBuildOrSpawn,
-      decrementMatter
-    );
-    const moveActions = this.generateMoveActions();
-    const spawnActions = this.generateSpawnActions(
-      matter,
-      costToBuildOrSpawn,
-      decrementMatter
-    );
-    return [...buildActions, ...moveActions, ...spawnActions];
-  }
-
   getMyCells() {
     return this.cells.filter((cell) => cell.owner === Owner.ME);
   }
@@ -283,24 +217,24 @@ abstract class Island {
     const myCells = this.getMyCells();
     return myCells.filter((cell) => {
       const northCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x &&
-          cell.coordinates.y === cell.coordinates.y - 1
+        (c) =>
+          c.coordinates.x === cell.coordinates.x &&
+          c.coordinates.y === cell.coordinates.y - 1
       );
       const southCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x &&
-          cell.coordinates.y === cell.coordinates.y + 1
+        (c) =>
+          c.coordinates.x === cell.coordinates.x &&
+          c.coordinates.y === cell.coordinates.y + 1
       );
       const eastCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x + 1 &&
-          cell.coordinates.y === cell.coordinates.y
+        (c) =>
+          c.coordinates.x === cell.coordinates.x + 1 &&
+          c.coordinates.y === cell.coordinates.y
       );
       const westCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x - 1 &&
-          cell.coordinates.y === cell.coordinates.y
+        (c) =>
+          c.coordinates.x === cell.coordinates.x - 1 &&
+          c.coordinates.y === cell.coordinates.y
       );
       if (northCell?.owner !== Owner.ME) return true;
       if (southCell?.owner !== Owner.ME) return true;
@@ -310,28 +244,54 @@ abstract class Island {
     });
   }
 
+  getAdjacentCells(cell: Cell) {
+    return this.cells.filter((c) => {
+      if (
+        c.coordinates.x === cell.coordinates.x - 1 &&
+        c.coordinates.y === cell.coordinates.y
+      )
+        return true;
+      if (
+        c.coordinates.x === cell.coordinates.x + 1 &&
+        c.coordinates.y === cell.coordinates.y
+      )
+        return true;
+      if (
+        c.coordinates.y === cell.coordinates.y - 1 &&
+        c.coordinates.x === cell.coordinates.x
+      )
+        return true;
+      if (
+        c.coordinates.y === cell.coordinates.y + 1 &&
+        c.coordinates.x === cell.coordinates.x
+      )
+        return true;
+      return false;
+    });
+  }
+
   getEnemyPerimeterCells() {
     const enemyCells = this.getEnemyCells();
     return enemyCells.filter((cell) => {
       const northCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x &&
-          cell.coordinates.y === cell.coordinates.y - 1
+        (c) =>
+          c.coordinates.x === cell.coordinates.x &&
+          c.coordinates.y === cell.coordinates.y - 1
       );
       const southCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x &&
-          cell.coordinates.y === cell.coordinates.y + 1
+        (c) =>
+          c.coordinates.x === cell.coordinates.x &&
+          c.coordinates.y === cell.coordinates.y + 1
       );
       const eastCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x + 1 &&
-          cell.coordinates.y === cell.coordinates.y
+        (c) =>
+          c.coordinates.x === cell.coordinates.x + 1 &&
+          c.coordinates.y === cell.coordinates.y
       );
       const westCell = this.cells.find(
-        (cell) =>
-          cell.coordinates.x === cell.coordinates.x - 1 &&
-          cell.coordinates.y === cell.coordinates.y
+        (c) =>
+          c.coordinates.x === cell.coordinates.x - 1 &&
+          c.coordinates.y === cell.coordinates.y
       );
       if (northCell?.owner !== Owner.FOE) return true;
       if (southCell?.owner !== Owner.FOE) return true;
@@ -397,6 +357,7 @@ class IslandWithMeAndEnemy extends Island {
     // if (myTotalRecyclers > enemyTotalRecyclers) return [];
 
     const potentialRecyclerCells = myCells
+      .filter((cell) => cell.canBuild)
       .map((cell) => {
         const northCellScrapAmount =
           this.cells.find(
@@ -442,27 +403,68 @@ class IslandWithMeAndEnemy extends Island {
   getMoveActions(): MoveAction[] {
     const myRobotCells = this.getMyRobotCells();
     if (myRobotCells.length === 0) return [];
-    let enemyPerimeterCells = this.getEnemyPerimeterCells();
+    let enemyCells = this.getEnemyCells();
     let moveActions: MoveAction[] = [];
     for (const robotCell of myRobotCells) {
       let robotUnits = robotCell.units;
-      const closestCells = getClosestCells([robotCell], enemyPerimeterCells);
+      const possibleCellsToMoveTo = this.getAdjacentCells(robotCell);
+      const closestCells = getClosestCells(
+        possibleCellsToMoveTo,
+        enemyCells
+      ).sort((a, b) => {
+        if (a.from.owner === Owner.FOE) return 1;
+        if (b.from.owner === Owner.FOE) return -1;
+        if (a.from.owner === Owner.NEUTRAL) return 1;
+        if (b.from.owner === Owner.NEUTRAL) return -1;
+        if (a.from.owner === Owner.ME) return -1;
+        if (b.from.owner === Owner.ME) return 1;
+        return 0;
+      });
+
+      const tempClosestCells = [...closestCells].filter(
+        (cell) => cell.from.owner !== Owner.ME
+      );
       for (let unit = 0; unit < robotCell.units; unit++) {
-        const closestCell = closestCells.shift();
-        if (!closestCell) break;
-        if (closestCell.distance <= 1 && robotUnits <= 1) continue;
+        let closestCell: { from: Cell; to: Cell; distance: number };
+        for (const cell of tempClosestCells) {
+          closestCell = tempClosestCells.shift();
+          if (!closestCell) {
+            closestCell = closestCells[0];
+            break;
+          }
+          const alreadyMovingToCell = moveActions.find(
+            (action) =>
+              action.toX === closestCell.from.coordinates.x &&
+              action.toY === closestCell.from.coordinates.y
+          );
+          console.error({ alreadyMovingToCell });
+          if (!alreadyMovingToCell) break;
+        }
+
+        if (!closestCell) {
+          closestCell = closestCells[closestCells.length - 1];
+        }
+
+        if (
+          closestCell.distance <= 1 &&
+          robotUnits <= 1 &&
+          closestCell.from.units > 0 &&
+          closestCell.from.owner === Owner.FOE
+        )
+          continue;
+
+        // if possible cells to move to is enemy cell, move to it
+
+        // if possible cells to move to is nuetral cell, move to it
+
+        // if possible cells to move to is my cell, move to it
         const moveAction = new MoveAction({
           amount: 1,
           fromX: robotCell.coordinates.x,
           fromY: robotCell.coordinates.y,
-          toX: closestCell.to.coordinates.x,
-          toY: closestCell.to.coordinates.y,
+          toX: closestCell.from.coordinates.x,
+          toY: closestCell.from.coordinates.y,
         });
-        enemyPerimeterCells.filter(
-          (cell) =>
-            cell.coordinates.x !== closestCell.to.coordinates.x &&
-            cell.coordinates.y !== closestCell.to.coordinates.y
-        );
         moveActions.push(moveAction);
         robotUnits--;
       }
@@ -525,8 +527,8 @@ class IslandWithMeAndNeutral extends Island {
           amount: 1,
           fromX: robotCell.coordinates.x,
           fromY: robotCell.coordinates.y,
-          toX: closestCell.to.coordinates.x,
-          toY: closestCell.to.coordinates.y,
+          toX: closestCell.from.coordinates.x,
+          toY: closestCell.from.coordinates.y,
         });
         nuetralCells = nuetralCells.filter(
           (cell) =>
@@ -562,7 +564,7 @@ class GameState {
   private _myMatter: number;
   private _oppMatter: number;
   private _cells: Cell[][] = [[]];
-  private _archipelagos: Archipelagos | null = null;
+  private _islands: Island[] = [];
 
   constructor(height: number, width: number) {
     this._height = height;
@@ -585,6 +587,11 @@ class GameState {
     this._myMatter = myMatter;
   }
 
+  decremenMyMatter = (amount: number) => {
+    console.error({ matt: this.myMatter, amount });
+    this.myMatter = this.myMatter - amount;
+  };
+
   get oppMatter() {
     return this._oppMatter;
   }
@@ -601,12 +608,12 @@ class GameState {
     this._cells = cells;
   }
 
-  get archipelagos() {
-    return this._archipelagos;
+  get islands() {
+    return this._islands;
   }
 
-  set archipelagos(archipelagos: Archipelagos | null) {
-    this._archipelagos = archipelagos;
+  set islands(islands: Island[]) {
+    this._islands = islands;
   }
 
   clearCells() {
@@ -664,7 +671,10 @@ class GameState {
           const nuetralIsland = nuetralCellsLength === totalIslandCells;
           const enemyIsland = enemyCellsLength === totalIslandCells;
 
-          if (nuetralIsland || enemyIsland) continue;
+          if (nuetralIsland || enemyIsland || myCellsLength === 0) {
+            islandCells = [];
+            continue;
+          }
 
           const myIsland = totalIslandCells === myCellsLength;
           const islandWithMeAndNuetral =
@@ -686,25 +696,111 @@ class GameState {
         }
       }
     }
-    return islands;
+    return islands.sort((a, b) => {
+      if (a instanceof IslandWithMeAndEnemy) {
+        return 1;
+      }
+      if (b instanceof IslandWithMeAndEnemy) {
+        return -1;
+      }
+      if (
+        a instanceof IslandWithMeAndEnemy &&
+        b instanceof IslandWithMeAndEnemy &&
+        a.cells.length > b.cells.length
+      ) {
+        return 1;
+      }
+      if (
+        a instanceof IslandWithMeAndEnemy &&
+        b instanceof IslandWithMeAndEnemy &&
+        a.cells.length < b.cells.length
+      ) {
+        return -1;
+      }
+      if (a instanceof IslandWithMeAndNeutral) {
+        return 1;
+      }
+      if (b instanceof IslandWithMeAndNeutral) {
+        return -1;
+      }
+      return 0;
+    });
   }
 
   cleanUpTurn() {
     this.cells = [];
-    this.archipelagos = null;
+    this.islands = [];
+  }
+
+  getAllRecyclers() {
+    let myRecyclers: Cell[] = [];
+    let enemyRecyclers: Cell[] = [];
+    for (let i = 0; i < this.cells.length; i += 1) {
+      for (let j = 0; j < this.cells[i].length; j += 1) {
+        if (this.cells[i][j].recycler) {
+          if (this.cells[i][j].owner === Owner.ME) {
+            myRecyclers = [...myRecyclers, this.cells[i][j]];
+          } else if (this.cells[i][j].owner === Owner.FOE) {
+            enemyRecyclers = [...enemyRecyclers, this.cells[i][j]];
+          }
+        }
+      }
+    }
+    return { myRecyclers, enemyRecyclers };
   }
 
   processTurn() {
-    const islands = this.findIslands();
-    this.archipelagos = new Archipelagos(
-      islands,
-      this.myMatter,
-      this.RECYCLER_AND_SPAWN_COST
-    );
-    const actions = this.archipelagos.processTurn();
-    const command = actions.map((action) => action.toString()).join("");
+    const buildActions: BuildAction[] = [];
+    const moveActions: MoveAction[] = [];
+    const spawnActions: SpawnAction[] = [];
+    const recyclers = this.getAllRecyclers();
+    const allowedToBuild =
+      recyclers.myRecyclers.length < recyclers.enemyRecyclers.length;
+    this.islands = this.findIslands();
+    for (const island of this.islands) {
+      buildActions.push(
+        ...island.generateBuildActions(
+          allowedToBuild,
+          this.myMatter,
+          this.RECYCLER_AND_SPAWN_COST,
+          this.decremenMyMatter
+        )
+      );
+    }
+
+    for (const buildAction of buildActions) {
+      this.cells[buildAction.x][buildAction.y].recycler = true;
+      const adjacentCells = getAdjacentCells(
+        this.cells,
+        this.cells[buildAction.x][buildAction.y],
+        this.height,
+        this.width
+      );
+      for (const cell of adjacentCells) {
+        this.cells[cell.coordinates.x][cell.coordinates.y].inRangeOfRecycler =
+          true;
+      }
+    }
+
+    // reset cell state if wanting to find new islands
+    // this.islands = this.findIslands();
+
+    for (const island of this.islands) {
+      moveActions.push(...island.generateMoveActions());
+      spawnActions.push(
+        ...island.generateSpawnActions(
+          this.myMatter,
+          this.RECYCLER_AND_SPAWN_COST,
+          this.decremenMyMatter
+        )
+      );
+    }
+
+    const command = [...buildActions, ...moveActions, ...spawnActions]
+      .map((action) => action.toString())
+      .join("");
     this.cleanUpTurn();
-    return command === "" ? "WAIT" : command;
+    return command === "" ? "WAIT;" : command;
   }
 }
 
