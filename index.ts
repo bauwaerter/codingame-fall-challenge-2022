@@ -346,15 +346,8 @@ class IslandWithMeAndEnemy extends Island {
   }
 
   getBuildActions(): BuildAction[] {
-    const myCells = this.getMyCells();
+    const myCells = this.getMyPerimeterCells();
     if (myCells.length === 0) return [];
-
-    // const myTotalRecyclers = myCells.filter((cell) => cell.recycler).length + 1;
-    // const enemyTotalRecyclers = this.getEnemyCells().filter(
-    //   (cell) => cell.recycler
-    // ).length;
-
-    // if (myTotalRecyclers > enemyTotalRecyclers) return [];
 
     const potentialRecyclerCells = myCells
       .filter((cell) => cell.canBuild)
