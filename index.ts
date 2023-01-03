@@ -527,8 +527,8 @@ class IslandWithMeAndNeutral extends Island {
           amount: 1,
           fromX: robotCell.coordinates.x,
           fromY: robotCell.coordinates.y,
-          toX: closestCell.from.coordinates.x,
-          toY: closestCell.from.coordinates.y,
+          toX: closestCell.to.coordinates.x,
+          toY: closestCell.to.coordinates.y,
         });
         nuetralCells = nuetralCells.filter(
           (cell) =>
@@ -756,7 +756,7 @@ class GameState {
     const recyclers = this.getAllRecyclers();
     const allowedToBuild =
       recyclers.myRecyclers.length < recyclers.enemyRecyclers.length ||
-      recyclers.myRecyclers.length < 2;
+      recyclers.myRecyclers.length < 1;
     this.islands = this.findIslands();
     for (const island of this.islands) {
       buildActions.push(
@@ -809,14 +809,14 @@ const gameState = new GameState(height, width);
 
 // game loop
 while (true) {
-  var inputs: string[] = readline().split(" ");
+  const inputs: string[] = readline().split(" ");
   const myMatter: number = parseInt(inputs[0]);
   const oppMatter: number = parseInt(inputs[1]);
   gameState.myMatter = myMatter;
   gameState.oppMatter = oppMatter;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      var inputs: string[] = readline().split(" ");
+      const inputs: string[] = readline().split(" ");
       const scrapAmount: number = parseInt(inputs[0]);
       const owner: number = parseInt(inputs[1]); // 1 = me, 0 = foe, -1 = neutral
       const units: number = parseInt(inputs[2]);
