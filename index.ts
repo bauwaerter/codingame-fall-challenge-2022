@@ -349,7 +349,7 @@ class IslandWithMeAndEnemy extends Island {
     const myPerimeterCells = this.getMyPerimeterCells();
     if (myPerimeterCells.length === 0) return [];
 
-    const enemyRobotCells = this.getEnemyRobotCells();
+    const enemyPerimeterCells = this.getEnemyPerimeterCells();
     const potentialRecyclerCells = myPerimeterCells
       .filter((cell) => cell.canBuild)
       .map((cell) => {
@@ -385,7 +385,7 @@ class IslandWithMeAndEnemy extends Island {
           westCellScrapAmount;
 
         const distance =
-          getClosestCells([cell], enemyRobotCells)?.[0]?.distance ?? -1;
+          getClosestCells([cell], enemyPerimeterCells)?.[0]?.distance ?? -1;
 
         return { cell, totalScrapAmount, distance };
       })
@@ -472,9 +472,7 @@ class IslandWithMeAndEnemy extends Island {
   }
 
   getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
-    const myPerimeterCells = this.getMyPerimeterCells().filter(
-      (cell) => cell.canSpawn
-    );
+    const myPerimeterCells = this.getMyPerimeterCells();
     if (myPerimeterCells.length === 0) return [];
     const nuetralCells = this.getNuetralCells();
     let enemyPerimeterCells = this.getEnemyPerimeterCells();
@@ -482,14 +480,14 @@ class IslandWithMeAndEnemy extends Island {
     const closestPerimeterEnemyCells = getClosestCells(
       myPerimeterCells,
       enemyPerimeterCells
-    ).sort((a, b) => a.to.units - b.to.units);
-    // const closestPerimeterNuetralCells = getClosestCells(
-    //   myPerimeterCells,
-    //   nuetralCells
-    // ).sort((a, b) => a.from.units - b.from.units);
+    ).sort((a, b) => a.from.units - b.from.units);
+    const closestPerimeterNuetralCells = getClosestCells(
+      myPerimeterCells,
+      nuetralCells
+    ).sort((a, b) => a.from.units - b.from.units);
     let closestPerimeterCells = [
       ...closestPerimeterEnemyCells,
-      // ...closestPerimeterNuetralCells,
+      ...closestPerimeterNuetralCells,
     ];
     for (let i = 0; i < maxNumberOfSpawnActions; i++) {
       const closestPerimeterCell = closestPerimeterCells.shift();
@@ -752,7 +750,9 @@ class GameState {
     const recyclers = this.getAllRecyclers();
     const allowedToBuild =
       recyclers.myRecyclers.length <= recyclers.enemyRecyclers.length + 1;
-    this.islands = this.findIslands();
+    this.islands = this.findIslands().sort(
+      (a, b) => b.cells.length - a.cells.length
+    );
     for (const island of this.islands) {
       buildActions.push(
         ...island.generateBuildActions(
