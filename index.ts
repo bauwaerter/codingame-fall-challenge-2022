@@ -750,9 +750,7 @@ class GameState {
     const recyclers = this.getAllRecyclers();
     const allowedToBuild =
       recyclers.myRecyclers.length <= recyclers.enemyRecyclers.length + 1;
-    this.islands = this.findIslands().sort(
-      (a, b) => b.cells.length - a.cells.length
-    );
+    this.islands = this.findIslands();
     for (const island of this.islands) {
       buildActions.push(
         ...island.generateBuildActions(
