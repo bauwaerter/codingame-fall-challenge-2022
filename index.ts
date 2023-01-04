@@ -349,7 +349,7 @@ class IslandWithMeAndEnemy extends Island {
     const myPerimeterCells = this.getMyPerimeterCells();
     if (myPerimeterCells.length === 0) return [];
 
-    const enemyPerimeterCells = this.getEnemyPerimeterCells();
+    const enemyRobotCells = this.getEnemyRobotCells();
     const potentialRecyclerCells = myPerimeterCells
       .filter((cell) => cell.canBuild)
       .map((cell) => {
@@ -385,7 +385,7 @@ class IslandWithMeAndEnemy extends Island {
           westCellScrapAmount;
 
         const distance =
-          getClosestCells([cell], enemyPerimeterCells)?.[0]?.distance ?? -1;
+          getClosestCells([cell], enemyRobotCells)?.[0]?.distance ?? -1;
 
         return { cell, totalScrapAmount, distance };
       })
@@ -472,22 +472,24 @@ class IslandWithMeAndEnemy extends Island {
   }
 
   getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
-    const myPerimeterCells = this.getMyPerimeterCells();
+    const myPerimeterCells = this.getMyPerimeterCells().filter(
+      (cell) => cell.canSpawn
+    );
     if (myPerimeterCells.length === 0) return [];
-    const nuetralCells = this.getNuetralCells();
+    // const nuetralCells = this.getNuetralCells();
     let enemyPerimeterCells = this.getEnemyPerimeterCells();
     let spawnActions: SpawnAction[] = [];
     const closestPerimeterEnemyCells = getClosestCells(
       myPerimeterCells,
       enemyPerimeterCells
     ).sort((a, b) => a.from.units - b.from.units);
-    const closestPerimeterNuetralCells = getClosestCells(
-      myPerimeterCells,
-      nuetralCells
-    ).sort((a, b) => a.from.units - b.from.units);
+    // const closestPerimeterNuetralCells = getClosestCells(
+    //   myPerimeterCells,
+    //   nuetralCells
+    // ).sort((a, b) => a.from.units - b.from.units);
     let closestPerimeterCells = [
       ...closestPerimeterEnemyCells,
-      ...closestPerimeterNuetralCells,
+      // ...closestPerimeterNuetralCells,
     ];
     for (let i = 0; i < maxNumberOfSpawnActions; i++) {
       const closestPerimeterCell = closestPerimeterCells.shift();
