@@ -699,17 +699,9 @@ class GameState {
       }
       if (
         a instanceof IslandWithMeAndEnemy &&
-        b instanceof IslandWithMeAndEnemy &&
-        a.cells.length > b.cells.length
+        b instanceof IslandWithMeAndEnemy
       ) {
-        return 1;
-      }
-      if (
-        a instanceof IslandWithMeAndEnemy &&
-        b instanceof IslandWithMeAndEnemy &&
-        a.cells.length < b.cells.length
-      ) {
-        return -1;
+        return b.cells.length - a.cells.length;
       }
       if (a instanceof IslandWithMeAndNeutral) {
         return 1;
