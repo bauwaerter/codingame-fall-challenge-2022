@@ -346,10 +346,11 @@ class IslandWithMeAndEnemy extends Island {
   }
 
   getBuildActions(): BuildAction[] {
-    const myCells = this.getMyPerimeterCells();
-    if (myCells.length === 0) return [];
+    const myPerimeterCells = this.getMyPerimeterCells();
+    if (myPerimeterCells.length === 0) return [];
 
-    const potentialRecyclerCells = myCells
+    const enemyPerimeterCells = this.getEnemyPerimeterCells();
+    const potentialRecyclerCells = myPerimeterCells
       .filter((cell) => cell.canBuild)
       .map((cell) => {
         const northCellScrapAmount =
@@ -382,8 +383,13 @@ class IslandWithMeAndEnemy extends Island {
           southCellScrapAmount +
           eastCellScrapAmount +
           westCellScrapAmount;
-        return { cell, totalScrapAmount };
+
+        const distance =
+          getClosestCells([cell], enemyPerimeterCells)?.[0]?.distance ?? -1;
+
+        return { cell, totalScrapAmount, distance };
       })
+      .filter((cell) => cell.distance >= 0 && cell.distance <= 1)
       .sort((a, b) => b.totalScrapAmount - a.totalScrapAmount);
 
     if (potentialRecyclerCells.length === 0) return [];
@@ -748,8 +754,7 @@ class GameState {
     const spawnActions: SpawnAction[] = [];
     const recyclers = this.getAllRecyclers();
     const allowedToBuild =
-      recyclers.myRecyclers.length < recyclers.enemyRecyclers.length ||
-      recyclers.myRecyclers.length < 1;
+      recyclers.myRecyclers.length <= recyclers.enemyRecyclers.length + 1;
     this.islands = this.findIslands();
     for (const island of this.islands) {
       buildActions.push(
