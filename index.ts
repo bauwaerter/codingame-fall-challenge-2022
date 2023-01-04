@@ -473,7 +473,7 @@ class IslandWithMeAndEnemy extends Island {
 
   getSpawnActions(maxNumberOfSpawnActions: number): SpawnAction[] {
     const myPerimeterCells = this.getMyPerimeterCells().filter(
-      (cell) => cell.canSpawn && !cell.inRangeOfRecycler
+      (cell) => cell.canSpawn
     );
     if (myPerimeterCells.length === 0) return [];
     const nuetralCells = this.getNuetralCells();
@@ -482,7 +482,7 @@ class IslandWithMeAndEnemy extends Island {
     const closestPerimeterEnemyCells = getClosestCells(
       myPerimeterCells,
       enemyPerimeterCells
-    ).sort((a, b) => a.from.units - b.from.units);
+    ).sort((a, b) => a.to.units - b.to.units);
     // const closestPerimeterNuetralCells = getClosestCells(
     //   myPerimeterCells,
     //   nuetralCells
